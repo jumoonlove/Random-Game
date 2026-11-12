@@ -213,7 +213,7 @@
     var shortSleeve = c.sleeve ? c.sleeve === 'short' : top === 'tee';
     var tall = c.height === 'tall' ? 1 : 0;
     var glasses = c.glasses === true ? 'round' : c.glasses;
-    var FRAME = c.glassesFrame === 'metal' ? '#8f9bb0' : '#4a3226';
+    var FRAME = c.glassesFrame === 'metal' ? '#8f9bb0' : '#8a5634';
 
     var isLong = style === 'long' || style === 'longPart' || style === 'longWave';
     var isMed = style === 'permPart';
@@ -470,22 +470,16 @@
 
     /* ---------- 안경 (머리카락 위에) ---------- */
     if (glasses && front) {
-      if (glasses === 'bigRound') {
-        [3, 9].forEach(function (gx) {
-          P(gx + 1, 4, 2, 1, FRAME); P(gx + 1, 8, 2, 1, FRAME); P(gx, 5, 1, 3, FRAME); P(gx + 3, 5, 1, 3, FRAME);
-        });
-        P(4, 5, 1, 3, mix(skin, '#ffffff', 0.45)); P(11, 5, 1, 3, mix(skin, '#ffffff', 0.45));
-        P(7, 6, 2, 1, FRAME);
-      } else {
-        [4, 9].forEach(function (gx) {
-          if (glasses === 'square') { P(gx, 5, 3, 1, FRAME); P(gx, 8, 3, 1, FRAME); }
-          else { P(gx + 1, 5, 1, 1, FRAME); P(gx + 1, 8, 1, 1, FRAME); }
-          P(gx, 6, 1, 2, FRAME); P(gx + 2, 6, 1, 2, FRAME);
-        });
-        P(7, 6, 2, 1, FRAME);
-        // 뿔테는 렌즈 반짝임을 넣어 선글라스처럼 보이지 않게
-        if (c.glassesFrame !== 'metal') { P(5, 6, 1, 1, '#e6f1f8'); P(10, 6, 1, 1, '#e6f1f8'); }
-      }
+      // 렌즈 안쪽은 밝게 비치고 눈이 보이도록 (선글라스처럼 보이지 않게)
+      var big = glasses === 'bigRound', sq = glasses === 'square';
+      var gt = big ? 4 : 5, LENS = mix(skin, '#ffffff', 0.6);
+      [3, 9].forEach(function (gx) {
+        P(gx + 1, gt + 1, 2, 7 - gt, LENS);
+        P(gx + (sq ? 0 : 1), gt, sq ? 4 : 2, 1, FRAME); P(gx + (sq ? 0 : 1), 8, sq ? 4 : 2, 1, FRAME);
+        P(gx, gt + 1, 1, 7 - gt, FRAME); P(gx + 3, gt + 1, 1, 7 - gt, FRAME);
+      });
+      P(7, 6, 2, 1, FRAME);
+      P(5, 6, 1, 2, EYE); P(10, 6, 1, 2, EYE);
     } else if (glasses && side) {
       P(9, 5, 3, 1, FRAME); P(9, 8, 3, 1, FRAME); P(9, 6, 1, 2, FRAME); P(11, 6, 1, 2, FRAME);
       P(6, 6, 3, 1, FRAME);
