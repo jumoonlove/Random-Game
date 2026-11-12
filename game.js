@@ -766,8 +766,8 @@
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     if (!hideMain) {
       ctx.font = 'bold 24px ' + FONT;
-      ctx.fillStyle = NAVY; ctx.fillText('싱싱 바다횟집', 482, 47);
-      ctx.fillStyle = '#ffffff'; ctx.fillText('싱싱 바다횟집', 480, 45);
+      ctx.fillStyle = NAVY; ctx.fillText('노량', 482, 47);
+      ctx.fillStyle = '#ffffff'; ctx.fillText('노량', 480, 45);
     }
     ctx.font = 'bold 13px ' + FONT;
     ctx.fillStyle = '#ffffff';
