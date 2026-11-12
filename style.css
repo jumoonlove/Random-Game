@@ -6,12 +6,12 @@ html, body {
 }
 
 body {
-  background: #f3e3c3;
+  background: #dcecf5;
   background-image:
-    linear-gradient(rgba(122, 77, 44, 0.06) 2px, transparent 2px),
-    linear-gradient(90deg, rgba(122, 77, 44, 0.06) 2px, transparent 2px);
+    linear-gradient(rgba(31, 63, 110, 0.06) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(31, 63, 110, 0.06) 2px, transparent 2px);
   background-size: 24px 24px;
-  color: #4a2e1a;
+  color: #1b2f4f;
   font-family: "Malgun Gothic", "맑은 고딕", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
 }
 
@@ -30,17 +30,17 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: #fff8e6;
-  border: 4px solid #6b4428;
-  box-shadow: 4px 4px 0 #b98d62;
+  background: #ffffff;
+  border: 4px solid #1f3f6e;
+  box-shadow: 4px 4px 0 #8fb3d1;
 }
 
 .panel-title {
   margin: 0;
   padding: 8px 12px;
   font-size: 16px;
-  color: #fff8e6;
-  background: #6b4428;
+  color: #ffffff;
+  background: #1f3f6e;
 }
 
 .roster {
@@ -57,7 +57,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 1px 4px;
-  border-bottom: 2px dotted #e2cfa4;
+  border-bottom: 2px dotted #cfe0ec;
 }
 .roster li:last-child { border-bottom: 0; }
 
@@ -83,9 +83,9 @@ body {
   flex: 0 0 auto;
   font-size: 11px;
   padding: 2px 6px;
-  border: 2px solid #c9b48a;
-  background: #f3e3c3;
-  color: #8a6d4b;
+  border: 2px solid #b9cbd9;
+  background: #dcecf5;
+  color: #5f7790;
   white-space: nowrap;
 }
 .roster li.walk .badge  { border-color: #d98a2b; background: #ffe2b0; color: #8a4b10; }
@@ -116,7 +116,7 @@ body {
 .status {
   margin: 0;
   font-size: 14px;
-  color: #7a4d2c;
+  color: #3d5f8a;
 }
 
 .canvas-frame {
@@ -132,9 +132,9 @@ body {
   max-width: 100%;
   max-height: 100%;
   aspect-ratio: 4 / 3;
-  border: 4px solid #6b4428;
-  box-shadow: 4px 4px 0 #b98d62;
-  background: #c99a63;
+  border: 4px solid #1f3f6e;
+  box-shadow: 4px 4px 0 #8fb3d1;
+  background: #b4cddd;
 }
 
 .toolbar {
@@ -151,25 +151,25 @@ body {
   font-size: 15px;
   font-weight: bold;
   padding: 8px 16px;
-  color: #4a2e1a;
-  background: #fff8e6;
-  border: 3px solid #6b4428;
-  box-shadow: 3px 3px 0 #6b4428;
+  color: #1b2f4f;
+  background: #ffffff;
+  border: 3px solid #1f3f6e;
+  box-shadow: 3px 3px 0 #1f3f6e;
   cursor: pointer;
 }
-.btn:hover:not(:disabled) { background: #ffeec2; }
+.btn:hover:not(:disabled) { background: #e3f1fb; }
 .btn:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
-.btn:focus-visible { outline: 3px solid #d9463e; outline-offset: 2px; }
+.btn:focus-visible { outline: 3px solid #e2574c; outline-offset: 2px; }
 .btn:disabled {
-  color: #a8977a;
-  border-color: #b9a888;
-  box-shadow: 3px 3px 0 #b9a888;
+  color: #9fb0c0;
+  border-color: #b4c4d2;
+  box-shadow: 3px 3px 0 #b4c4d2;
   cursor: not-allowed;
 }
-.btn.primary { background: #d9463e; color: #fff8e6; }
-.btn.primary:hover:not(:disabled) { background: #e85c50; }
-.btn.primary:disabled { background: #e6c9b8; color: #fff8e6; }
-.btn.toggle[aria-pressed="true"] { background: #2f4a7a; color: #fff8e6; }
+.btn.primary { background: #e2574c; color: #ffffff; }
+.btn.primary:hover:not(:disabled) { background: #ee6f64; }
+.btn.primary:disabled { background: #f0c4bf; color: #ffffff; }
+.btn.toggle[aria-pressed="true"] { background: #2f4a7a; color: #ffffff; }
 
 /* 좁은 화면에서는 목록을 위로 */
 @media (max-width: 820px) {
