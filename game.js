@@ -25,7 +25,7 @@
   var VIEW_W = ART_W * PX, VIEW_H = ART_H * PX;   // 960 x 720
 
   var WALK_SPEED = 80;             // 걷는 속도 (아트 픽셀/초)
-  var SPAWN_INTERVAL = 0.6;        // 다음 사람이 입장하기까지 간격(초)
+  var SPAWN_INTERVAL = 3;          // 다음 사람이 입장하기까지 간격(초)
 
   var FONT = '"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 
