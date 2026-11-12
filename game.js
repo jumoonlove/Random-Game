@@ -51,7 +51,8 @@
    *   }
    *   ctx        = { people: 전체 참석자, seats: 전체 좌석 }
    *   assignment = [{ person, seat }, ...]
-   *   seat       = { id, x, y, isManagerSeat, adjacent: [옆자리 좌석 id] }
+   *   seat       = { id, x, y, isManagerSeat, adjacent: [옆자리 좌석 id],
+   *                  tables: [속한 테이블 번호], near: [가까운 좌석 id] }
    *
    * 아래 RULES 배열에 규칙을 추가하기만 하면 적용됩니다.
    * ========================================================== */
@@ -94,8 +95,43 @@
   ---------------------------------------------------------- */
 
   // 적용할 규칙 목록. 지금은 지점장 고정석 외에는 완전 랜덤입니다.
+  // 규칙 1) 같은 직급은 한 테이블에 최대 MAX_SAME_RANK 명까지
+  //   seat.tables = 그 좌석이 속한 "테이블" 번호 목록
+  //   (직사각형: 붙여 놓은 4인 테이블 4개 / 원형: 나란히 앉은 4자리 묶음)
+  var MAX_SAME_RANK = 2;
+  var rankSpreadRule = {
+    name: '같은 직급은 한 테이블에 ' + MAX_SAME_RANK + '명까지',
+    validate: function (assignment) {
+      var count = {};
+      return assignment.every(function (a) {
+        return a.seat.tables.every(function (tb) {
+          var key = tb + '|' + a.person.rank;
+          count[key] = (count[key] || 0) + 1;
+          return count[key] <= MAX_SAME_RANK;
+        });
+      });
+    }
+  };
+
+  // 규칙 2) 아래 사람들은 서로 떨어져 앉기 (이름을 추가/삭제하면 됩니다)
+  //   seat.near = "붙어 있다"고 보는 좌석 번호 목록
+  //   (직사각형: 같은 4인 테이블 + 바로 옆자리 / 원형: 양옆으로 2칸 이내)
+  var KEEP_APART = ['이승석', '양만형', '이용진', '이창현'];
+  var keepApartRule = {
+    name: '특정 인원 떨어뜨리기',
+    validate: function (assignment) {
+      var group = assignment.filter(function (a) { return KEEP_APART.indexOf(a.person.name) >= 0; });
+      return group.every(function (a) {
+        return group.every(function (b) { return a === b || a.seat.near.indexOf(b.seat.id) < 0; });
+      });
+    }
+  };
+
+  // 적용할 규칙 목록. 규칙을 빼려면 해당 줄을 지우거나 // 로 막으면 됩니다.
   var RULES = [
-    managerFixedRule
+    managerFixedRule,
+    rankSpreadRule,
+    keepApartRule
     // , separateTeamsRule
     // , fixedSeatRule
   ];
@@ -117,7 +153,7 @@
     rng = rng || Math.random;
     rules = rules || [];
     var ctx = { people: people, seats: seats };
-    var MAX_TRIES = 1000;
+    var MAX_TRIES = 200000;
 
     // 1) 고정석 먼저
     var fixed = [];
@@ -150,8 +186,9 @@
       var ok = rules.every(function (rule) {
         return !rule.validate || rule.validate(result, ctx);
       });
-      if (ok) return result;
+      if (ok) { assignSeats.lastTries = t + 1; return result; }
     }
+    assignSeats.lastTries = -1;
     console.warn('규칙을 모두 만족하는 배치를 찾지 못해 마지막 배치를 사용합니다.');
     return result;
   }
@@ -520,6 +557,9 @@
         id: i, x: Math.round(x), y: Math.round(y), angle: a,
         isManagerSeat: i === 0,
         adjacent: [(i + N - 1) % N, (i + 1) % N],
+        // 원형은 큰 테이블 하나이므로, 나란히 앉은 4자리를 "한 테이블"로 봅니다
+        tables: [i, (i + N - 1) % N, (i + N - 2) % N, (i + N - 3) % N],
+        near: [(i + N - 2) % N, (i + N - 1) % N, (i + 1) % N, (i + 2) % N],
         facing: facingToward(x, y, cx, cy)
       });
     }
@@ -562,7 +602,14 @@
       s.id = id;
       s.isManagerSeat = id === 3;
       s.adjacent = [(id + N - 1) % N, (id + 1) % N];
+      // 4인 테이블 번호 (왼쪽부터 0~3). 양 끝자리는 가장 가까운 끝 테이블에 포함
+      s.tables = [s.side === 'left' ? 0 : s.side === 'right' ? 3 : Math.floor((s.x - x0) / (STEP * 2))];
       s.facing = { top: 'front', bottom: 'back', left: 'right', right: 'left' }[s.side];
+    });
+    seats.forEach(function (s) {
+      s.near = seats.filter(function (o) {
+        return o !== s && (o.tables[0] === s.tables[0] || s.adjacent.indexOf(o.id) >= 0);
+      }).map(function (o) { return o.id; });
     });
     return {
       type: 'rect', title: '직사각형 테이블', seats: seats, labelMaxW: 82,
