@@ -1249,6 +1249,7 @@
     }
     if (kind === 'cheers' && state.seated.length < 3) kind = 'boss';
     if (kind === 'boss' && !managerEntry()) kind = 'sprint';
+    if (kind === 'bow' && !managerEntry()) kind = pick(['trip', 'sprint']);   // 지점장님이 아직 안 오셨으면 인사 대신 다른 이벤트
     if (kind !== 'normal') state.eventLog.push(kind);
 
     switch (kind) {
