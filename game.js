@@ -318,7 +318,8 @@
     var clothL = mix(cloth, '#ffffff', 0.35);
     var hairL = mix(hair, '#ffffff', 0.22);
     var hairD = mix(hair, '#000000', 0.28);
-    var hairS = mix(hair, skin, 0.38);              // 아주 짧게 깎은 부분
+    var hairS = mix(hair, skin, 0.38);              // 상고머리 옆처럼 아주 짧게 깎은 부분
+    var hairB = mix(hair, skin, 0.08);              // 밤톨머리 (거의 원래 머리색)
     var eyes = c.eyes || 'normal';
     var blush = mix(skin, '#e8605a', eyes === 'normal' ? 0.34 : 0.5);
     var mouth = eyes === 'normal' ? mix(skin, '#6b1f1f', 0.55) : '#d25a66';
@@ -484,7 +485,7 @@
         case 'bald':
           P(3, 4, 1, 3, hair); P(12, 4, 1, 3, hair); P(6, 3, 2, 1, mix(skin, '#ffffff', 0.5)); break;
         case 'buzz':
-          P(4, 1, 8, 1, hairS); P(3, 2, 10, 2, hairS); P(3, 4, 1, 1, hairS); P(12, 4, 1, 1, hairS); break;
+          P(4, 1, 8, 1, hairB); P(3, 2, 10, 2, hairB); P(3, 4, 1, 1, hairB); P(12, 4, 1, 1, hairB); break;
         case 'up':
           P(5, -1, 5, 1, hair); P(4, 0, 8, 1, hair); P(3, 1, 10, 2, hair);
           P(3, 3, 2, 1, hair); P(11, 3, 2, 1, hair); P(3, 4, 1, 1, hair); P(12, 4, 1, 1, hair);
@@ -558,7 +559,7 @@
       if (style === 'bobPart') { P(2, 3, 2, 7, hair); P(12, 3, 2, 7, hair); P(3, 10, 1, 1, hair); P(12, 10, 1, 1, hair); P(2, 5, 1, 2, hairL); }
     } else if (back) {
       if (style === 'bald') P(3, 5, 10, 3, hair);
-      else if (style === 'buzz') { P(4, 1, 8, 1, hairS); P(3, 2, 10, 6, hairS); }
+      else if (style === 'buzz') { P(4, 1, 8, 1, hairB); P(3, 2, 10, 6, hairB); }
       else { P(4, 1, 8, 1, hair); P(3, 2, 10, 7, hair); P(4, 9, 8, 1, hair); P(5, 2, 2, 1, hairL); }
       if (style === 'up') { P(5, -1, 5, 1, hair); P(4, 0, 8, 1, hair); }
       if (style === 'waveUp') { P(3, -1, 2, 1, hair); P(6, -1, 3, 1, hair); P(10, -1, 2, 1, hair); P(2, 0, 12, 5, hair); }
@@ -577,7 +578,7 @@
     } else {
       // 옆모습 (오른쪽을 보는 기준, 왼쪽은 좌우 반전)
       if (style === 'bald') P(3, 5, 4, 3, hair);
-      else if (style === 'buzz') { P(4, 1, 8, 1, hairS); P(3, 2, 10, 2, hairS); P(3, 4, 4, 4, hairS); }
+      else if (style === 'buzz') { P(4, 1, 8, 1, hairB); P(3, 2, 10, 2, hairB); P(3, 4, 4, 4, hairB); }
       else {
         P(4, 1, 8, 1, hair); P(3, 2, 10, 2, hair);
         P(3, 4, 5, 5, hair); P(4, 9, 3, 1, hair);
@@ -1212,7 +1213,7 @@
   function seatPerson(person, seat) {
     var entry = { person: person, seat: seat, at: state.time };
     state.seated.push(entry);
-    setRoster(person.id, person.isManager ? 'fixed' : 'done');
+    setRoster(person.id, 'done');
     updateUi();
     return entry;
   }
@@ -1886,7 +1887,7 @@
     save: document.getElementById('btnSave')
   };
   var rosterItems = {};
-  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료', fixed: '고정석 ★' };
+  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료' };
 
   function buildRoster() {
     el.count.textContent = '(' + PEOPLE.length + '명)';
@@ -1908,9 +1909,9 @@
     it.badge.textContent = BADGE[st];
   }
   function refreshRoster() {
-    var fixedIds = {};
-    state.seated.forEach(function (s) { fixedIds[s.person.id] = true; });
-    PEOPLE.forEach(function (p) { setRoster(p.id, fixedIds[p.id] ? 'fixed' : 'wait'); });
+    var seatedIds = {};
+    state.seated.forEach(function (s) { seatedIds[s.person.id] = true; });
+    PEOPLE.forEach(function (p) { setRoster(p.id, seatedIds[p.id] ? 'done' : 'wait'); });
   }
 
   function updateUi() {
