@@ -1132,7 +1132,7 @@
     state.layout.drawTable(bgCtx, state.layout);
   }
 
-  /** 초기화: 지점장님만 앉아 있는 상태 */
+  /** 초기화: 아직 아무도 오지 않은 빈 테이블 */
   function reset() {
     state.layout = layouts[state.tableType];
     state.phase = 'ready';
@@ -1160,24 +1160,9 @@
     state.shakeUntil = 0;    // 화면 흔들림
     state.confetti = [];
     state.sparkles = [];
-    // 고정석(지점장님)은 시작 전부터 착석
-    fixedOnly(PEOPLE, state.layout.seats).forEach(function (a) {
-      state.seated.push({ person: a.person, seat: a.seat, at: -10 });
-    });
     rebuildBackground();
     refreshRoster();
     updateUi();
-  }
-
-  // 규칙의 고정석만 뽑아내기 (시작 전 화면용)
-  function fixedOnly(people, seats) {
-    var fixedRules = RULES.filter(function (r) { return r.fixed; });
-    var ids = {};
-    fixedRules.forEach(function (r) {
-      r.fixed({ people: people, seats: seats }).forEach(function (f) { ids[f.person.id] = true; });
-    });
-    var fixedPeople = people.filter(function (p) { return ids[p.id]; });
-    return assignSeats(fixedPeople, seats, fixedRules);
   }
 
   function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
@@ -1186,9 +1171,8 @@
   function start() {
     reset();
     state.assignment = assignSeats(PEOPLE, state.layout.seats, RULES);
-    var seatedIds = {};
-    state.seated.forEach(function (s) { seatedIds[s.person.id] = true; });
-    state.queue = shuffle(state.assignment.filter(function (a) { return !seatedIds[a.person.id]; }), Math.random);
+    // 지점장님도 다른 사람들과 섞여 걸어 들어옵니다 (자리는 고정석 그대로)
+    state.queue = shuffle(state.assignment, Math.random);
     state.total = state.queue.length;
     state.plan = planEvents(state.total);
     state.spawnTimer = 0.3;
@@ -1246,6 +1230,10 @@
     var L = state.layout;
     var w = newWalker(next.person, next.seat, DOOR.x, DOOR.y);
     var kind = state.plan[index] || 'normal';
+    if (next.person.isManager) {                       // 지점장님은 돌발 이벤트 없이 환영받으며 입장
+      if (state.plan[index] && !state.plan[index + 1]) state.plan[index + 1] = state.plan[index];   // 이벤트는 다음 사람에게
+      kind = 'vip';
+    }
     var path = L.pathTo(next.seat);
     setRoster(next.person.id, 'walk');
 
@@ -1322,6 +1310,19 @@
           } },
           { wait: 1.9, pose: 'hidden' },
           { fn: function (w) { resolveFight(w, target); } }
+        ];
+        break;
+
+      case 'vip':                                      // 지점장님 입장: 먼저 온 사람들이 인사
+        shuffle(state.seated.filter(function (s) { return !s.hidden && !s.busy; }), Math.random).forEach(function (s, n) {
+          s.cheerUntil = state.time + 2.4;
+          if (n < 4) say(s, ['지점장님 오셨습니까!', '어서 오세요~!', '안녕하세요!!', '이쪽입니다~!'][n], 2.4);
+        });
+        w.actions = [
+          { path: path },
+          { fn: function (o) { state.seated.forEach(function (s) { s.cheerUntil = state.time + 1.5; }); } },
+          SIT,
+          { fn: function () { var m = managerEntry(); if (m) say(m, pick(['다들 일찍 왔네~', '자, 편하게들 앉아요']), 2.2); } }
         ];
         break;
 
@@ -1919,7 +1920,7 @@
     el.start.disabled = ph !== 'ready';
     el.retry.disabled = ph === 'ready';
     el.save.disabled = ph !== 'done';
-    var arrived = state.seated.filter(function (s) { return !s.person.isManager; }).length;
+    var arrived = state.seated.length;
     el.status.textContent =
       ph === 'ready' ? '[시작]을 누르면 직원들이 한 명씩 입장합니다.' :
       ph === 'running' ? '입장 중…  ' + arrived + ' / ' + state.total + '명 착석' :
