@@ -24,8 +24,8 @@
   var SS = 2;                      // 선명도(및 저장 PNG 해상도) 배율
   var VIEW_W = ART_W * PX, VIEW_H = ART_H * PX;   // 960 x 720
 
-  var WALK_SPEED = 80;             // 걷는 속도 (아트 픽셀/초)
-  var SPAWN_INTERVAL = 3;          // 다음 사람이 입장하기까지 간격(초)
+  var WALK_SPEED = 62;             // 걷는 속도 (아트 픽셀/초)
+  var SPAWN_INTERVAL = 5;          // 다음 사람이 입장하기까지 간격(초)
 
   var FONT = '"Malgun Gothic","맑은 고딕","Apple SD Gothic Neo","Noto Sans KR",sans-serif';
 
@@ -332,12 +332,13 @@
     var tall = c.height === 'tall' ? 1 : 0;
     var glasses = c.glasses === true ? 'round' : c.glasses;
     if (glasses === 'false' || glasses === 'none') glasses = false;   // 따옴표를 붙여 써도 안경 없음으로 처리
-    var FRAME = c.glassesFrame === 'metal' ? '#8f9bb0' : '#8a5634';
+    var FRAME = c.glassesFrame === 'metal' ? '#8f9bb0' : c.glassesFrame === 'gold' ? '#c79a4e' : '#8a5634';
 
     var isLong = style === 'long' || style === 'longPart' || style === 'longWave';
     var isMed = style === 'permPart';
     var isBob = style === 'bob' || style === 'bobPart';
-    var noBangs = style === 'longPart' || style === 'longWave' || style === 'permPart' || style === 'bobPart';
+    var isWaveEnds = style === 'waveEnds';
+    var noBangs = style === 'longPart' || style === 'longWave' || style === 'permPart' || style === 'bobPart' || isWaveEnds;
 
     oy -= tall;
     function P(x, y, w, h, col) {
@@ -364,6 +365,7 @@
     if (front) {
       if (isLong) P(2, 3, 12, 13, hairD);
       if (isMed) P(1, 3, 14, 10, hairD);
+      if (isWaveEnds) P(3, 3, 10, 10, hairD);
       if (isBob) P(2, 3, 12, 8, hairD);
       if (style === 'ponytail') { P(13, 3, 2, 3, hair); P(14, 6, 1, 6, hairD); }
     }
@@ -405,11 +407,13 @@
     else P(tx, 11, tw, 5, cloth);
 
     if (top === 'stripe') for (x = tx + 1; x < tx + tw; x += 2) P(x, 11, 1, 5, inner);
+    if (top === 'vest') for (y = 12; y < 15; y += 2) for (x = tx + 1; x < tx + tw; x += 2) P(x, y, 1, 1, clothL);
     if (top === 'knit') for (y = 12; y < 16; y++) for (x = tx + (y % 2); x < tx + tw; x += 2) P(x, y, 1, 1, clothL);
     if (top === 'sweat') P(side ? tx : (build === 'muscular' ? 4 : tx), 15, side ? tw : (build === 'muscular' ? 8 : tw), 1, clothD);
     if (top === 'offshoulder') { P(tx, 11, tw, 1, skin); P(tx, 12, tw, 1, clothL); }
 
     function arm(ax, w) {
+      if (top === 'vest') { P(ax, 11, w, 4, mix(inner, '#16203a', 0.12)); P(ax, 15, w, 1, skin); return; }   // 조끼: 소매는 안에 입은 셔츠
       if (top === 'offshoulder') { P(ax, 11, w, 1, skin); P(ax, 12, w, 3, clothD); P(ax, 15, w, 1, skin); }
       else if (shortSleeve) { P(ax, 11, w, 2, clothD); P(ax, 13, w, 3, skin); }
       else { P(ax, 11, w, 4, clothD); P(ax, 15, w, 1, skin); if (top === 'sweat') P(ax, 14, w, 1, clothL); }
@@ -435,6 +439,9 @@
           P(6, 11, 4, 5, inner); P(7, 11, 2, 1, skin); break;
         case 'jacket':
           P(7, 11, 2, 4, inner); P(7, 11, 2, 1, skin); P(6, 11, 1, 3, clothD); P(9, 11, 1, 3, clothD); P(8, 15, 1, 1, clothD); break;
+        case 'vest':                                  // 니트 조끼 + 셔츠 깃
+          P(7, 11, 2, 2, inner); P(7, 11, 2, 1, skin); P(6, 11, 1, 1, inner); P(9, 11, 1, 1, inner);
+          P(6, 12, 1, 1, clothL); P(9, 12, 1, 1, clothL); P(7, 13, 2, 1, clothL); P(tx, 15, tw, 1, clothD); break;
         case 'zipup':
           P(6, 11, 4, 1, clothD); P(8, 12, 1, 4, '#e6ecf0'); break;
         case 'blouse':
@@ -520,7 +527,7 @@
           P(5, 1, 2, 1, hairL); break;
         case 'spiky':
           capStd(); spikes(); P(5, 4, 1, 1, hair); P(8, 4, 2, 1, hair); break;
-        case 'longPart': case 'longWave': case 'permPart': case 'bobPart':
+        case 'longPart': case 'longWave': case 'permPart': case 'bobPart': case 'waveEnds':
           // 앞머리 없이 가운데 가르마 (이마가 보임)
           P(4, 1, 8, 1, hair); P(3, 2, 10, 1, hair); P(3, 3, 3, 1, hair); P(10, 3, 3, 1, hair);
           P(3, 4, 2, 1, hair); P(11, 4, 2, 1, hair); P(3, 5, 1, 1, hair); P(12, 5, 1, 1, hair);
@@ -543,6 +550,11 @@
         P(0, 5, 1, 2, hair); P(15, 7, 1, 2, hair); P(0, 9, 1, 2, hair); P(15, 4, 1, 1, hair);
         P(2, 5, 1, 1, hairL); P(13, 8, 1, 1, hairL); P(1, 10, 1, 1, hairL); P(14, 5, 1, 1, hairL);
       }
+      if (isWaveEnds) {                               // 위는 생머리, 끝만 바깥으로 살짝 웨이브
+        P(2, 3, 2, 9, hair); P(12, 3, 2, 9, hair);
+        P(1, 11, 2, 2, hair); P(13, 11, 2, 2, hair); P(2, 13, 2, 1, hair); P(12, 13, 2, 1, hair);
+        P(2, 5, 1, 4, hairL); P(13, 11, 1, 1, hairL);
+      }
       if (style === 'bobPart') { P(2, 3, 2, 7, hair); P(12, 3, 2, 7, hair); P(3, 10, 1, 1, hair); P(12, 10, 1, 1, hair); P(2, 5, 1, 2, hairL); }
     } else if (back) {
       if (style === 'bald') P(3, 5, 10, 3, hair);
@@ -558,6 +570,7 @@
       if (isLong) { P(2, 3, 12, 12, hair); P(3, 15, 10, 1, hairD); }
       if (isMed) { P(1, 3, 14, 10, hair); P(0, 5, 1, 2, hair); P(15, 7, 1, 2, hair); P(3, 6, 2, 1, hairL); P(10, 9, 2, 1, hairL); }
       if (style === 'longWave') { P(1, 6, 1, 3, hair); P(14, 9, 1, 3, hair); P(4, 8, 2, 1, hairL); P(9, 11, 2, 1, hairL); }
+      if (isWaveEnds) { P(2, 3, 12, 10, hair); P(1, 11, 2, 2, hair); P(13, 11, 2, 2, hair); P(3, 13, 10, 1, hairD); P(5, 12, 2, 1, hairL); P(9, 12, 2, 1, hairL); }
       if (style === 'ponytail') { P(7, 3, 2, 1, '#3d6fb0'); P(7, 4, 2, 9, hairD); }
       if (style === 'bun') P(6, -1, 4, 2, hair);
       if (style === 'spiky') spikes();
@@ -580,6 +593,7 @@
       if (isBob) P(2, 3, 5, 8, hair);
       if (isLong) P(2, 3, 4, 13, hair);
       if (isMed) { P(1, 3, 6, 10, hair); P(0, 5, 1, 2, hair); P(0, 9, 1, 2, hair); }
+      if (isWaveEnds) { P(2, 3, 4, 10, hair); P(1, 11, 2, 2, hair); P(3, 13, 3, 1, hair); }
       if (style === 'longWave') { P(1, 6, 1, 3, hair); P(1, 12, 1, 2, hair); P(3, 8, 1, 2, hairL); }
       if (noBangs) P(8, 4, 2, 1, skin);
       if (style === 'ponytail') { P(2, 3, 1, 1, '#3d6fb0'); P(1, 4, 2, 7, hairD); }
@@ -592,6 +606,12 @@
       // 렌즈 안쪽은 밝게 비치고 눈이 보이도록 (선글라스처럼 보이지 않게)
       var big = glasses === 'bigRound', sq = glasses === 'square';
       var gt = big ? 4 : 5, LENS = mix(skin, '#ffffff', 0.6);
+      if (glasses === 'smallRound') {                 // 작고 얇은 동그란 안경 (얼굴이 넓어 보이지 않게)
+        [4, 9].forEach(function (gx) {
+          P(gx + 1, 5, 1, 1, FRAME); P(gx + 1, 8, 1, 1, FRAME); P(gx, 6, 1, 2, FRAME); P(gx + 2, 6, 1, 2, FRAME);
+        });
+        P(7, 6, 2, 1, FRAME);
+      } else {
       [3, 9].forEach(function (gx) {
         P(gx + 1, gt + 1, 2, 7 - gt, LENS);
         P(gx + (sq ? 0 : 1), gt, sq ? 4 : 2, 1, FRAME); P(gx + (sq ? 0 : 1), 8, sq ? 4 : 2, 1, FRAME);
@@ -599,6 +619,7 @@
       });
       P(7, 6, 2, 1, FRAME);
       P(5, 6, 1, 2, EYE); P(10, 6, 1, 2, EYE);
+      }
     } else if (glasses && side) {
       P(9, 5, 3, 1, FRAME); P(9, 8, 3, 1, FRAME); P(9, 6, 1, 2, FRAME); P(11, 6, 1, 2, FRAME);
       P(6, 6, 3, 1, FRAME);
@@ -1074,7 +1095,7 @@
   /* ==========================================================
    * 6. 게임 상태 · 애니메이션 · 화면 출력
    * ----------------------------------------------------------
-   * 진행 순서(phase): ready → running(입장) → finale(지점장 퇴장) → done(완료)
+   * 진행 순서(phase): ready → running(입장) → finale(지점장님 한턱 + 건배) → done(완료)
    *
    * 걷는 사람(walker)은 "할 일 목록(actions)"을 순서대로 처리합니다.
    *   { path: [[x,y],...], speed: 배속 }   길 따라 걷기
@@ -1132,7 +1153,9 @@
     state.jumpFish = null;
     state.boostUntil = 0;
     state.allFront = false;
-    state.managerLeft = null;   // 퇴장한 지점장 { person, seat }
+    state.hearts = [];       // 떠오르는 하트
+    state.heartsUntil = 0;
+    state.announce = null;   // 입장 알림 { text, until }
     state.confetti = [];
     state.sparkles = [];
     // 고정석(지점장님)은 시작 전부터 착석
@@ -1257,7 +1280,7 @@
 
       case 'bow':                                      // 지점장님께 90도 인사
         w.actions = [
-          { path: [path[0], [DOOR.x, 210]] },
+          { path: [[DOOR.x, 212]] },
           { fn: function (w) {
             say(w, pick(['안녕하십니까!!', '지점장님 안녕하세요!!']), 1.5);
             var m = managerEntry();
@@ -1328,6 +1351,18 @@
       default:
         w.actions = [{ path: path }, SIT];
     }
+
+    // 등장 포즈: 문 앞에서 잠깐 정면을 보고 서고, 이름이 크게 뜹니다
+    state.announce = { text: nameOf(next.person) + ' 입장!', t0: state.time, until: state.time + 2.6 };
+    if (kind !== 'sprint') {
+      var first = w.actions[0];
+      if (first.path && first.path[0][0] === DOOR.x && first.path[0][1] === 222) first.path = first.path.slice(1);
+      w.actions = [
+        { path: [[DOOR.x, 214]] },
+        { fn: function (o) { pop('★', o.x - 12, o.y - 22, '#e0a92e', 18); pop('★', o.x + 12, o.y - 26, '#e0a92e', 14); } },
+        { wait: 1.2, pose: 'pose', dir: 'front' }
+      ].concat(w.actions);
+    }
   }
 
   /** 자리 싸움 결과: 규칙에 어긋나지 않을 때만 자리를 뺏을 수 있습니다 */
@@ -1373,7 +1408,7 @@
     pop(win ? '뺏었다!' : '방어 성공!', theirs.x, theirs.y - 20, '#e0a92e', 20);
   }
 
-  /* ---------- 마무리: 지점장님이 돈을 던지고 퇴장 ---------- */
+  /* ---------- 마무리: 지점장님이 한턱 쏘고 다 같이 건배 ---------- */
   function at(delay, fn) { state.timeline.push({ at: state.time + delay, fn: fn }); }
 
   function startFinale() {
@@ -1384,36 +1419,42 @@
     var L = state.layout, seat = boss.seat, person = boss.person;
     var hx = seat.x, hy = seat.y - 6;
 
-    at(0.6, function () { say(boss, '다들 앉았나? 좋아!', 1.8); });
-    at(2.6, function () {                              // 자리에서 일어남
+    at(0.8, function () { say(boss, '다들 앉았나? 좋아!', 2.2); });
+    at(3.2, function () {                              // 자리에서 일어나 한턱
       state.seated.splice(state.seated.indexOf(boss), 1);
-      state.managerLeft = { person: person, seat: seat };
       var w = newWalker(person, seat, seat.x, seat.y + 8);
       w.dir = 'front';
-      say(w, '오늘은 내가 쏜다!!', 2.4);
-      w.actions = [
-        { wait: 3.6, pose: 'stand', dir: 'front' },
-        { fn: function (o) { say(o, '난 먼저 간다~ 맛있게들 먹어!', 2.6); } },
-        { wait: 1.4, pose: 'stand', dir: 'front' },
-        { path: L.pathOut(seat) },
-        { fn: function (o) { o.remove = true; setRoster(person.id, 'left'); finish(); } }
-      ];
+      say(w, '오늘은 내가 쏜다!!', 3);
+      w.actions = [{ wait: 3.6, pose: 'stand', dir: 'front' }, SIT];   // 다시 자리에 앉음
     });
-    at(3.8, function () {                              // 돈 뿌리기
+    at(4.6, function () {                              // 돈 뿌리기
       for (var i = 0; i < 22; i++) {
         var p = L.tableSpot();
         state.bills.push({ x0: hx, y0: hy, x1: p[0], y1: p[1], t0: state.time + i * 0.05, dur: 0.55 + Math.random() * 0.3, kind: i % 3 });
       }
       pop('촤악~!', hx, seat.y + 30, '#e0a92e', 26);
     });
-    at(4.9, function () {                              // 환호
+    at(5.8, function () {                              // 환호 + 하트
       state.allFront = true;
-      var lines = shuffle(['와아아~!!', '지점장님 최고!!', '감사합니다!!', '잘 먹겠습니다!!', '역시 지점장님!'], Math.random);
+      state.heartsUntil = state.time + 7;
+      var lines = shuffle(['와아아~!!', '지점장님 최고!!', '감사합니다!!', '잘 먹겠습니다!!', '역시 지점장님!', '사랑합니다~!'], Math.random);
       shuffle(state.seated, Math.random).forEach(function (s, n) {
-        s.cheerUntil = state.time + 3.2;
+        s.cheerUntil = state.time + 3;
         if (n < 5) say(s, lines[n], 2.6);
       });
     });
+    at(9.2, function () {                              // 다 같이 건배
+      var m = managerEntry();
+      if (m) { say(m, '자, 다 같이~ 위하여!!', 2.4); m.cheerUntil = state.time + 3.5; }
+    });
+    at(10.6, function () {
+      shuffle(state.seated.filter(function (s) { return !s.person.isManager; }), Math.random).forEach(function (s, n) {
+        s.cheerUntil = state.time + 2.6;
+        if (n < 6) say(s, pick(['위하여~!!', '위하여!!', '짠~!']), 2);
+        if (n < 8) pop('짠!', s.seat.x, s.seat.y - 16, '#e0a92e', 16);
+      });
+    });
+    at(13, finish);
   }
 
   function finish() {
@@ -1506,6 +1547,12 @@
       pop('첨벙!', b.x + (state.jumpFish.side ? -8 : 8), b.y - 14, '#2c6fb5', 20);
       state.jumpFish = null;
     }
+    // 하트: 직원들 머리 위에서 떠오름
+    if (now < state.heartsUntil && Math.random() < dt * 9 && state.seated.length) {
+      var hs = pick(state.seated).seat;
+      state.hearts.push({ x: hs.x + (Math.random() - 0.5) * 8, y: hs.y - 12, t0: now, life: 1.6, sway: Math.random() * 6.28, big: Math.random() < 0.3 });
+    }
+    state.hearts = state.hearts.filter(function (h) { return now < h.t0 + h.life; });
     state.bubbles = state.bubbles.filter(function (bb) { return now < bb.until; });
     state.pops = state.pops.filter(function (p) { return now < p.t0 + p.life; });
     state.puffs = state.puffs.filter(function (p) { return now < p.t0 + 0.5; });
@@ -1536,6 +1583,12 @@
     else { R(a, x - 2, y - 1, 5, 3, c[1]); R(a, x - 2, y - 1, 5, 2, c[0]); R(a, x, y - 1, 1, 2, c[1]); }
   }
 
+  function drawHeart(a, x, y, big) {
+    var c = '#f0708a', l = '#ffd0da';
+    if (big) { R(a, x - 3, y - 2, 3, 2, c); R(a, x + 1, y - 2, 3, 2, c); R(a, x - 3, y, 7, 2, c); R(a, x - 2, y + 2, 5, 1, c); R(a, x - 1, y + 3, 3, 1, c); R(a, x, y + 4, 1, 1, c); R(a, x - 2, y - 1, 1, 1, l); }
+    else { R(a, x - 2, y - 1, 2, 1, c); R(a, x + 1, y - 1, 2, 1, c); R(a, x - 2, y, 5, 1, c); R(a, x - 1, y + 1, 3, 1, c); R(a, x, y + 2, 1, 1, c); R(a, x - 2, y - 1, 1, 1, l); }
+  }
+
   function drawWalker(a, w, t) {
     var x = Math.round(w.x), y = Math.round(w.y), p = w.person;
     if (w.pose === 'hidden') return;
@@ -1551,6 +1604,8 @@
       }
     } else if (w.pose === 'sit') {
       drawCharacter(a, p, x - 8, y - 17, { sit: true, dir: 'front' });
+    } else if (w.pose === 'pose') {                   // 등장 포즈: 살짝 폴짝
+      drawCharacter(a, p, x - 8, y - 20 - (Math.sin(t * 10) > 0.2 ? 2 : 0), { dir: 'front' });
     } else if (w.pose === 'bow') {                    // 꾸벅꾸벅
       drawCharacter(a, p, x - 8, y - 20 + (Math.sin(t * 9) > 0 ? 3 : 0), { dir: w.dir });
     } else {
@@ -1612,7 +1667,7 @@
 
   function nameOf(p) { return (p.rank ? p.rank + ' ' : '') + p.name; }
 
-  /** 화면 그리기. clean=true 이면 저장용 자리표(효과 없이, 지점장님도 자리에 앉은 모습) */
+  /** 화면 그리기. clean=true 이면 저장용 자리표(효과 없이) */
   function render(clean) {
     var t = state.time, done = state.phase === 'done';
     var allFront = state.allFront || done;
@@ -1632,7 +1687,6 @@
 
     // 캐릭터 (아래쪽에 있는 사람이 위에 그려지도록 y 정렬)
     var seatedList = state.seated.slice();
-    if (clean && state.managerLeft) seatedList.push({ person: state.managerLeft.person, seat: state.managerLeft.seat, at: -10 });
     var items = [];
     seatedList.forEach(function (s) {
       if (s.hidden && !clean) return;
@@ -1660,6 +1714,10 @@
 
     if (!clean) {
       state.clouds.forEach(function (c) { drawCloud(a, c, t); });
+      state.hearts.forEach(function (h) {
+        var k = (t - h.t0) / h.life;
+        drawHeart(a, Math.round(h.x + Math.sin(t * 4 + h.sway) * 2), Math.round(h.y - k * 22), h.big && k < 0.8);
+      });
       flying.forEach(function (f) {
         var b = f.b, p = f.p;
         drawBill(a, b.x0 + (b.x1 - b.x0) * p, b.y0 + (b.y1 - b.y0) * p - Math.sin(Math.PI * p) * 16, b.kind, Math.sin(t * 30 + b.x1) > 0);
@@ -1682,9 +1740,8 @@
     ctx.setTransform(SS, 0, 0, SS, 0, 0);
     drawSigns(ctx, done);
 
-    // 이름표 ("직급 이름") — 퇴장한 지점장님 자리에도 이름표는 남김
+    // 이름표 ("직급 이름")
     var labelList = state.seated.slice();
-    if (state.managerLeft) labelList.push(state.managerLeft);
     labelList.forEach(function (s) {
       var text = nameOf(s.person);
       ctx.font = 'bold 12px ' + FONT;
@@ -1693,6 +1750,16 @@
       drawLabel(text, Math.round(pos.x), Math.round(pos.y), s.person.isManager, pos.maxW || L.labelMaxW);
     });
 
+    if (!clean && state.announce && t < state.announce.until) {      // 입장 알림
+      var an = state.announce, ak = Math.min(1, (t - an.t0) / 0.2);
+      ctx.font = 'bold 22px ' + FONT;
+      var aw = Math.ceil(ctx.measureText(an.text).width) + 36, ah = 34, axx = Math.round(VIEW_W / 2 - aw / 2), ayy = Math.round(683 + (1 - ak) * 14);   // 입구 아래쪽 벽 위에 표시
+      ctx.fillStyle = '#a8741a'; ctx.fillRect(axx, ayy + 3, aw, ah - 6); ctx.fillRect(axx + 3, ayy, aw - 6, ah);
+      ctx.fillStyle = '#fff6d6'; ctx.fillRect(axx + 3, ayy + 3, aw - 6, ah - 6);
+      ctx.fillStyle = '#e0a92e'; ctx.fillRect(axx + 8, ayy + 7, 5, ah - 14); ctx.fillRect(axx + aw - 13, ayy + 7, 5, ah - 14);
+      ctx.fillStyle = '#1b2f4f'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(an.text, VIEW_W / 2, ayy + ah / 2 + 1);
+    }
     if (!clean) {
       state.bubbles.forEach(drawBubble);
       state.pops.forEach(function (p) {
@@ -1762,7 +1829,7 @@
     save: document.getElementById('btnSave')
   };
   var rosterItems = {};
-  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료', fixed: '고정석 ★', left: '쏘고 퇴장' };
+  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료', fixed: '고정석 ★' };
 
   function buildRoster() {
     el.count.textContent = '(' + PEOPLE.length + '명)';

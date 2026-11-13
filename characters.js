@@ -16,15 +16,15 @@
  *                     'partPerm'(가르마펌) | 'shaggy'(더벅머리) | 'bowl'(바가지머리)
  *                     'short' | 'part' | 'curly' | 'spiky' | 'bald'
  *                [여] 'longPart'(앞머리 없는 긴 생머리) | 'longWave'(여신머리)
- *                     'permPart'(가르마 파마머리) | 'bobPart'(앞머리 없는 단발)
+ *                     'permPart'(가르마 파마머리) | 'waveEnds'(끝만 웨이브) | 'bobPart'(앞머리 없는 단발)
  *                     'ponytail'(묶은 머리) | 'long' | 'bob' | 'bangs' | 'bun'
  *   hairColor  : 'black' | 'darkbrown' | 'brown' | 'lightbrown' | 'gray' | 'blonde' | 'red'
  *                또는 '#rrggbb'
  *
  * 얼굴 / 체형
  *   skinTone   : 'white' | 'light' | 'fair' | 'tan' | 'dark'  또는 '#rrggbb'
- *   glasses    : false | 'round'(동그란) | 'bigRound'(크고 동그란) | 'square'(네모)
- *   glassesFrame : 'horn'(뿔테) | 'metal'(쇠테)
+ *   glasses    : false | 'smallRound'(작고 얇은 동그란) | 'round'(동그란) | 'bigRound'(크고 동그란) | 'square'(네모)
+ *   glassesFrame : 'horn'(뿔테) | 'metal'(쇠테) | 'gold'(금테)
  *   eyes       : 'normal' | 'big'(큰 눈) | 'pretty'(속눈썹)
  *   face       : 'normal' | 'oval'(계란형)
  *   build      : 'slim'(마름) | 'normal' | 'chubby'(통통) | 'muscular'(근육질)
@@ -32,11 +32,11 @@
  *
  * 옷
  *   top        : 'shirt'(셔츠) | 'stripe'(줄무늬 셔츠) | 'tee'(티셔츠) | 'polo'(카라티)
- *                'sweat'(맨투맨) | 'knit'(니트) | 'cardigan'(가디건+안에 티)
+ *                'sweat'(맨투맨) | 'knit'(니트) | 'vest'(니트 조끼+안에 셔츠) | 'cardigan'(가디건+안에 티)
  *                'jacket'(정장 재킷) | 'zipup'(집업) | 'blouse'(블라우스) | 'offshoulder'(오프숄더)
  *   sleeve     : 'long' | 'short'
  *   clothColor : 윗옷 색 '#rrggbb'
- *   innerColor : (가디건·재킷) 안에 입은 옷 색, (줄무늬 셔츠) 줄무늬 색
+ *   innerColor : (가디건·재킷·조끼) 안에 입은 옷 색, (줄무늬 셔츠) 줄무늬 색
  *   bottom     : 'pants'(긴바지) | 'longskirt'(긴치마) | 'skirt'(짧은 치마)
  *   pantsColor : 바지/치마 색 '#rrggbb'
  *
@@ -96,10 +96,10 @@
 
     { id: 12, name: '박진성', rank: '행원',     isManager: false, gender: 'M',
       hairStyle: 'up', hairColor: 'black', skinTone: 'fair', glasses: false, build: 'normal',
-      top: 'shirt', sleeve: 'long', clothColor: WHITE, bottom: 'pants', pantsColor: KHAKI, team: '' },
+      top: 'vest', sleeve: 'long', clothColor: NAVY, innerColor: WHITE, bottom: 'pants', pantsColor: KHAKI, team: '' },
 
     { id: 13, name: '김지현', rank: '행원',     isManager: false, gender: 'F',
-      hairStyle: 'permPart', hairColor: 'black', skinTone: 'light', glasses: 'false', glassesFrame: 'horn', build: 'normal',
+      hairStyle: 'waveEnds', hairColor: 'black', skinTone: 'light', glasses: 'smallRound', glassesFrame: 'gold', build: 'slim',
       top: 'cardigan', sleeve: 'long', clothColor: BLACK, innerColor: WHITE, bottom: 'pants', pantsColor: BLACK, team: '' },
 
     { id: 14, name: '이지원', rank: '행원',     isManager: false, gender: 'F',
