@@ -40,19 +40,24 @@
   /* ==========================================================
    * 2. 자리 배정 로직
    * ----------------------------------------------------------
-   * 규칙(rule) 객체 형식
+   * 규칙(rule) 객체 형식  (필요한 항목만 넣으면 됩니다)
    *   {
    *     name: '규칙 이름',
-   *     // (선택) 고정석: 섞기 전에 먼저 앉힐 사람들을 돌려줍니다.
+   *     // 고정석: 섞기 전에 먼저 앉힐 사람들
    *     fixed: function (ctx) { return [{ person: 사람, seatId: 좌석번호 }]; },
-   *     // (선택) 검증: 완성된 배정이 규칙에 맞으면 true.
-   *     //        false 면 자동으로 다시 섞습니다.
-   *     validate: function (assignment, ctx) { return true; }
+   *     // 위반 점수: 규칙을 어긴 정도(0 이면 통과). 0 이 될 때까지 자리를 바꿔 봅니다.
+   *     score: function (assignment, ctx) { return 0; },
+   *     // 검증: score 대신 참/거짓으로만 써도 됩니다.
+   *     validate: function (assignment, ctx) { return true; },
+   *     // 선호도(0~1): 규칙을 통과한 배치를 이 확률로 채택합니다.
+   *     //            1 에 가까운 배치가 더 자주 뽑힙니다 (확률만 높일 뿐 강제는 아님).
+   *     weight: function (assignment, ctx) { return 1; }
    *   }
    *   ctx        = { people: 전체 참석자, seats: 전체 좌석 }
    *   assignment = [{ person, seat }, ...]
    *   seat       = { id, x, y, isManagerSeat, adjacent: [옆자리 좌석 id],
-   *                  tables: [속한 테이블 번호], near: [가까운 좌석 id] }
+   *                  tables: [속한 테이블 번호], near: [가까운 좌석 id],
+   *                  center: 0~1 (가운데에 가까울수록 1) }
    *
    * 아래 RULES 배열에 규칙을 추가하기만 하면 적용됩니다.
    * ========================================================== */
@@ -67,9 +72,74 @@
     }
   };
 
+  // 규칙 1) 주니어/시니어가 한 테이블에 몰리지 않게
+  //   한 테이블에 같은 그룹은 MAX_SAME_TIER 명까지.
+  //   단, 5명이 앉는 테이블(직사각형 양 끝)은 3명까지 허용합니다.
+  //   (9명 대 9명이라 4개 테이블에 2명씩만으로는 나눌 수 없기 때문)
+  //   seat.tables = 그 좌석이 속한 "테이블" 번호 목록
+  //   (직사각형: 붙여 놓은 4인 테이블 4개 / 원형: 나란히 앉은 4자리 묶음)
+  var TIERS = {
+    junior: ['행원', '대리', '연수생'],
+    senior: ['과장', '차장', '팀장', '부지점장', '지점장']
+  };
+  var MAX_SAME_TIER = 2;
+  function tierOf(person) {
+    for (var k in TIERS) if (TIERS[k].indexOf(person.rank) >= 0) return k;
+    return null;
+  }
+  var tierBalanceRule = {
+    name: '주니어/시니어는 한 테이블에 ' + MAX_SAME_TIER + '명까지',
+    score: function (assignment, ctx) {
+      var size = {}, count = {}, excess = 0, key;
+      ctx.seats.forEach(function (s) { s.tables.forEach(function (tb) { size[tb] = (size[tb] || 0) + 1; }); });
+      assignment.forEach(function (a) {
+        var tier = tierOf(a.person);
+        if (!tier) return;
+        a.seat.tables.forEach(function (tb) { count[tb + '|' + tier] = (count[tb + '|' + tier] || 0) + 1; });
+      });
+      for (key in count) {
+        var limit = Math.max(MAX_SAME_TIER, Math.ceil(size[key.split('|')[0]] / 2));
+        if (count[key] > limit) excess += count[key] - limit;
+      }
+      return excess;
+    }
+  };
+
+  // 규칙 2) 아래 사람들은 서로 떨어져 앉기 (이름을 추가/삭제하면 됩니다)
+  //   seat.near = "붙어 있다"고 보는 좌석 번호 목록
+  //   (직사각형: 같은 4인 테이블 + 바로 옆자리 / 원형: 양옆으로 2칸 이내)
+  var KEEP_APART = ['이승석', '양만형', '이용진', '이창현'];
+  var keepApartRule = {
+    name: '특정 인원 떨어뜨리기',
+    score: function (assignment) {
+      var group = assignment.filter(function (a) { return KEEP_APART.indexOf(a.person.name) >= 0; });
+      var pairs = 0;
+      group.forEach(function (a) {
+        group.forEach(function (b) { if (a !== b && a.seat.near.indexOf(b.seat.id) >= 0) pairs++; });
+      });
+      return pairs / 2;
+    }
+  };
+
+  // 규칙 3) 아래 사람들은 가운데 쪽에 앉을 확률을 조금 높게
+  //   (직사각형: 긴 테이블의 가운데 / 원형: 지점장석 가까이)
+  //   CENTER_PULL: 0 = 영향 없음, 1 에 가까울수록 가운데로 강하게 쏠림
+  var PREFER_CENTER = ['이승석'];
+  var CENTER_PULL = 0.6;
+  var preferCenterRule = {
+    name: '가운데 선호',
+    weight: function (assignment) {
+      var w = 1;
+      assignment.forEach(function (a) {
+        if (PREFER_CENTER.indexOf(a.person.name) >= 0) w *= (1 - CENTER_PULL) + CENTER_PULL * a.seat.center;
+      });
+      return w;
+    }
+  };
+
   /* ---- 나중에 쓸 규칙 예시 (RULES 에 넣으면 동작합니다) ----
 
-  // 예시 1) 같은 팀끼리 옆자리에 앉지 않기 (characters.js 의 team 사용)
+  // 같은 팀끼리 옆자리에 앉지 않기 (characters.js 의 team 사용)
   var separateTeamsRule = {
     name: '같은 팀 떨어뜨리기',
     validate: function (assignment) {
@@ -84,54 +154,22 @@
     }
   };
 
-  // 예시 2) 특정 인원 고정석 (좌석 번호는 buildRoundLayout / buildRectLayout 참고)
+  // 특정 인원 고정석 (좌석 번호는 buildRoundLayout / buildRectLayout 참고)
   var fixedSeatRule = {
     name: '특정 인원 고정석',
     fixed: function (ctx) {
-      var who = ctx.people.filter(function (p) { return p.name === '직원1'; })[0];
+      var who = ctx.people.filter(function (p) { return p.name === '이승석'; })[0];
       return who ? [{ person: who, seatId: 1 }] : [];
     }
   };
   ---------------------------------------------------------- */
 
-  // 적용할 규칙 목록. 지금은 지점장 고정석 외에는 완전 랜덤입니다.
-  // 규칙 1) 같은 직급은 한 테이블에 최대 MAX_SAME_RANK 명까지
-  //   seat.tables = 그 좌석이 속한 "테이블" 번호 목록
-  //   (직사각형: 붙여 놓은 4인 테이블 4개 / 원형: 나란히 앉은 4자리 묶음)
-  var MAX_SAME_RANK = 2;
-  var rankSpreadRule = {
-    name: '같은 직급은 한 테이블에 ' + MAX_SAME_RANK + '명까지',
-    validate: function (assignment) {
-      var count = {};
-      return assignment.every(function (a) {
-        return a.seat.tables.every(function (tb) {
-          var key = tb + '|' + a.person.rank;
-          count[key] = (count[key] || 0) + 1;
-          return count[key] <= MAX_SAME_RANK;
-        });
-      });
-    }
-  };
-
-  // 규칙 2) 아래 사람들은 서로 떨어져 앉기 (이름을 추가/삭제하면 됩니다)
-  //   seat.near = "붙어 있다"고 보는 좌석 번호 목록
-  //   (직사각형: 같은 4인 테이블 + 바로 옆자리 / 원형: 양옆으로 2칸 이내)
-  var KEEP_APART = ['이승석', '양만형', '이용진', '이창현'];
-  var keepApartRule = {
-    name: '특정 인원 떨어뜨리기',
-    validate: function (assignment) {
-      var group = assignment.filter(function (a) { return KEEP_APART.indexOf(a.person.name) >= 0; });
-      return group.every(function (a) {
-        return group.every(function (b) { return a === b || a.seat.near.indexOf(b.seat.id) < 0; });
-      });
-    }
-  };
-
   // 적용할 규칙 목록. 규칙을 빼려면 해당 줄을 지우거나 // 로 막으면 됩니다.
   var RULES = [
     managerFixedRule,
-    rankSpreadRule,
-    keepApartRule
+    tierBalanceRule,
+    keepApartRule,
+    preferCenterRule
     // , separateTeamsRule
     // , fixedSeatRule
   ];
@@ -145,17 +183,31 @@
     return a;
   }
 
+  /** 배정이 규칙을 얼마나 어겼는지 (0 이면 모든 규칙 통과) */
+  function violations(assignment, seats, rules) {
+    var ctx = { people: assignment.map(function (a) { return a.person; }), seats: seats };
+    var total = 0;
+    (rules || RULES).forEach(function (rule) {
+      if (rule.score) total += rule.score(assignment, ctx);
+      else if (rule.validate && !rule.validate(assignment, ctx)) total += 1;
+    });
+    return total;
+  }
+
   /**
    * 자리 배정 (화면/애니메이션과 무관한 순수 함수)
+   *  1) 고정석을 먼저 앉히고
+   *  2) 나머지를 완전 랜덤으로 섞은 뒤
+   *  3) 규칙 위반이 0 이 될 때까지 두 자리를 무작위로 맞바꿔 보고
+   *  4) weight(선호도) 확률로 채택, 아니면 처음부터 다시 섞습니다.
    * @returns [{ person, seat }, ...]
    */
   function assignSeats(people, seats, rules, rng) {
     rng = rng || Math.random;
     rules = rules || [];
     var ctx = { people: people, seats: seats };
-    var MAX_TRIES = 200000;
+    var MAX_ROUNDS = 80, MAX_SWAPS = 4000;
 
-    // 1) 고정석 먼저
     var fixed = [];
     var usedSeat = {}, usedPerson = {};
     rules.forEach(function (rule) {
@@ -173,24 +225,53 @@
     var freePeople = people.filter(function (p) { return !usedPerson[p.id]; });
     if (freePeople.length > freeSeats.length) {
       console.warn('좌석보다 사람이 많습니다. 일부 인원은 배정되지 않습니다.');
+      freePeople = freePeople.slice(0, freeSeats.length);
     }
 
-    // 2) 나머지는 완전 랜덤으로 섞고, 검증 규칙을 통과할 때까지 반복
-    var result = fixed;
-    for (var t = 0; t < MAX_TRIES; t++) {
-      var ps = shuffle(freePeople, rng);
-      var ss = shuffle(freeSeats, rng);
-      var n = Math.min(ps.length, ss.length);
-      result = fixed.slice();
-      for (var i = 0; i < n; i++) result.push({ person: ps[i], seat: ss[i] });
-      var ok = rules.every(function (rule) {
-        return !rule.validate || rule.validate(result, ctx);
-      });
-      if (ok) { assignSeats.lastTries = t + 1; return result; }
+    function build(slots) {                  // slots[i] = freeSeats[i] 에 앉을 사람 (빈자리는 null)
+      var out = fixed.slice();
+      for (var i = 0; i < slots.length; i++) if (slots[i]) out.push({ person: slots[i], seat: freeSeats[i] });
+      return out;
     }
+    function score(a) {
+      var total = 0;
+      rules.forEach(function (rule) {
+        if (rule.score) total += rule.score(a, ctx);
+        else if (rule.validate && !rule.validate(a, ctx)) total += 1;
+      });
+      return total;
+    }
+    function weight(a) {
+      var w = 1;
+      rules.forEach(function (rule) { if (rule.weight) w *= rule.weight(a, ctx); });
+      return w;
+    }
+
+    var best = null, bestScore = Infinity, lastValid = null;
+    var n = freeSeats.length;
+    for (var round = 0; round < MAX_ROUNDS; round++) {
+      var slots = freePeople.slice();
+      while (slots.length < n) slots.push(null);
+      slots = shuffle(slots, rng);
+      var current = build(slots), s = score(current);
+      for (var k = 0; k < MAX_SWAPS && s > 0 && n > 1; k++) {
+        var i = Math.floor(rng() * n), j = Math.floor(rng() * n);
+        if (i === j || slots[i] === slots[j]) continue;
+        var tmp = slots[i]; slots[i] = slots[j]; slots[j] = tmp;
+        var cand = build(slots), s2 = score(cand);
+        if (s2 <= s) { current = cand; s = s2; }
+        else { tmp = slots[i]; slots[i] = slots[j]; slots[j] = tmp; }
+      }
+      if (s < bestScore) { best = current; bestScore = s; }
+      if (s === 0) {
+        lastValid = current;
+        if (rng() < weight(current)) { assignSeats.lastTries = round + 1; return current; }
+      }
+    }
+    if (lastValid) { assignSeats.lastTries = MAX_ROUNDS; return lastValid; }
     assignSeats.lastTries = -1;
-    console.warn('규칙을 모두 만족하는 배치를 찾지 못해 마지막 배치를 사용합니다.');
-    return result;
+    console.warn('규칙을 모두 만족하는 배치를 찾지 못해 가장 가까운 배치를 사용합니다.');
+    return best || fixed;
   }
 
   /* ==========================================================
@@ -250,6 +331,7 @@
     var shortSleeve = c.sleeve ? c.sleeve === 'short' : top === 'tee';
     var tall = c.height === 'tall' ? 1 : 0;
     var glasses = c.glasses === true ? 'round' : c.glasses;
+    if (glasses === 'false' || glasses === 'none') glasses = false;   // 따옴표를 붙여 써도 안경 없음으로 처리
     var FRAME = c.glassesFrame === 'metal' ? '#8f9bb0' : '#8a5634';
 
     var isLong = style === 'long' || style === 'longPart' || style === 'longWave';
@@ -538,6 +620,11 @@
    * seat.x, seat.y = 앉은 캐릭터의 중심(아트 픽셀)
    * 앉은 캐릭터의 발밑(base)은 y + 8
    * 입구는 화면 아래쪽 가운데, 지점장석은 그 맞은편(위쪽)
+   *
+   * 걸어 다니는 길은 테이블 둘레를 도는 "통로(ring)" 입니다.
+   *   ring      = 통로 위의 점 목록 (한 바퀴)
+   *   seat.acc  = 그 좌석으로 들어가는 통로 위 점의 번호
+   *   → 테이블을 통과하지 않고 통로를 따라 가까운 방향으로 돌아갑니다.
    * ========================================================== */
   function facingToward(x, y, cx, cy) {
     var dx = cx - x, dy = cy - y;
@@ -545,14 +632,53 @@
     return dy > 0 ? 'front' : 'back';
   }
 
+  // 통로를 따라 from → to 로 가는 점들 (가까운 방향)
+  function ringWalk(ring, from, to) {
+    var n = ring.length, fwd = [], bwd = [], lenF = 0, lenB = 0, i, j;
+    function d(a, b) { return Math.sqrt((a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1])); }
+    for (i = from; i !== to; i = j) { j = (i + 1) % n; fwd.push(ring[j]); lenF += d(ring[i], ring[j]); }
+    for (i = from; i !== to; i = j) { j = (i + n - 1) % n; bwd.push(ring[j]); lenB += d(ring[i], ring[j]); }
+    return lenF <= lenB ? fwd : bwd;
+  }
+
+  // 배치에 공통 경로 함수 붙이기
+  function withPaths(layout, ring, doorAcc) {
+    var inside = [DOOR.x, 222];
+    function base(seat) { return [seat.x, seat.y + 8]; }
+    layout.ring = ring;
+    // 입구 → 좌석
+    layout.pathTo = function (seat) {
+      return [inside, ring[doorAcc]].concat(ringWalk(ring, doorAcc, seat.acc), [base(seat)]);
+    };
+    // 좌석 → 다른 좌석
+    layout.pathBetween = function (a, b) {
+      return [ring[a.acc]].concat(ringWalk(ring, a.acc, b.acc), [base(b)]);
+    };
+    // 좌석 → 입구 밖
+    layout.pathOut = function (seat) {
+      return [ring[seat.acc]].concat(ringWalk(ring, seat.acc, doorAcc), [inside, [DOOR.x, DOOR.y]]);
+    };
+    // 좌석 바로 뒤(통로와 좌석 사이)에 서는 위치
+    layout.standBehind = function (seat) {
+      var p = ring[seat.acc], b = base(seat);
+      return [(p[0] + b[0]) / 2, (p[1] + b[1]) / 2];
+    };
+    return layout;
+  }
+
   // 원형: 0번 = 맨 위(지점장석), 시계 방향으로 1 ~ 17번
   function buildRoundLayout() {
     var N = 18, cx = 160, cy = 126, R = 64;
-    var ringCx = cx, ringCy = cy + 8, ringR = 80;   // 걸어 다니는 통로
-    var seats = [];
-    for (var i = 0; i < N; i++) {
+    var ringCx = cx, ringCy = cy + 8, ringR = 80, RING_N = 72;   // 5도 간격
+    var seats = [], ring = [], i;
+    for (i = 0; i < RING_N; i++) {
+      var ra = i * 2 * Math.PI / RING_N;
+      ring.push([ringCx + ringR * Math.cos(ra), ringCy + ringR * Math.sin(ra)]);
+    }
+    for (i = 0; i < N; i++) {
       var a = -Math.PI / 2 + i * 2 * Math.PI / N;
       var x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+      var fromBoss = Math.min(i, N - i);            // 지점장석에서 몇 칸 떨어졌는지
       seats.push({
         id: i, x: Math.round(x), y: Math.round(y), angle: a,
         isManagerSeat: i === 0,
@@ -560,30 +686,24 @@
         // 원형은 큰 테이블 하나이므로, 나란히 앉은 4자리를 "한 테이블"로 봅니다
         tables: [i, (i + N - 1) % N, (i + N - 2) % N, (i + N - 3) % N],
         near: [(i + N - 2) % N, (i + N - 1) % N, (i + 1) % N, (i + 2) % N],
+        center: 1 - (fromBoss - 1) / (N / 2 - 1),    // 원형의 "가운데" = 지점장석 가까이
+        acc: ((i * 4 - 18) % RING_N + RING_N) % RING_N,
         facing: facingToward(x, y, cx, cy)
       });
     }
-    return {
+    return withPaths({
       type: 'round', title: '원형 테이블', seats: seats, labelMaxW: 84,
-      pathTo: function (seat) {
-        var pts = [[DOOR.x, 222], [ringCx, ringCy + ringR]];
-        var a0 = Math.PI / 2, d = seat.angle - a0;
-        while (d > Math.PI) d -= 2 * Math.PI;
-        while (d < -Math.PI) d += 2 * Math.PI;
-        var steps = Math.ceil(Math.abs(d) / (Math.PI / 24));
-        for (var k = 1; k <= steps; k++) {
-          var a = a0 + d * k / steps;
-          pts.push([ringCx + ringR * Math.cos(a), ringCy + ringR * Math.sin(a)]);
-        }
-        pts.push([seat.x, seat.y + 8]);
-        return pts;
-      },
       labelPos: function (seat, w) {
         var c = Math.cos(seat.angle), s = Math.sin(seat.angle);
         return { x: seat.x * PX + c * (30 + w / 2), y: seat.y * PX + s * 45 - (s < 0 ? 4 : 0) };
       },
+      // 테이블 위 아무 곳 (돈이 떨어지는 자리)
+      tableSpot: function () {
+        var a = Math.random() * 6.283, r = 6 + Math.random() * 36;
+        return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+      },
       drawTable: drawRoundTable
-    };
+    }, ring, 18);
   }
 
   // 직사각형: 위쪽 줄 0~7(왼→오), 오른쪽 끝 8, 아래쪽 줄 9~16(오→왼), 왼쪽 끝 17
@@ -598,12 +718,26 @@
     seats.push({ x: xR, y: cy - 2, side: 'right' });
     for (i = 7; i >= 0; i--) seats.push({ x: x0 + STEP / 2 + i * STEP, y: yBot, side: 'bottom' });
     seats.push({ x: xL, y: cy - 2, side: 'left' });
+
+    // 통로: 왼쪽 위 모서리에서 시계 방향으로 한 바퀴
+    var ring = [[walk.l, walk.t]], doorAcc = -1;
     seats.forEach(function (s, id) {
       s.id = id;
+      if (id === 8) ring.push([walk.r, walk.t]);                      // 오른쪽 위 모서리
+      if (id === 9) ring.push([walk.r, walk.b]);                      // 오른쪽 아래 모서리
+      if (s.side === 'bottom' && doorAcc < 0 && s.x < DOOR.x) { doorAcc = ring.length; ring.push([DOOR.x, walk.b]); }
+      if (id === 17) ring.push([walk.l, walk.b]);                     // 왼쪽 아래 모서리
+      s.acc = ring.length;
+      ring.push(s.side === 'top' ? [s.x, walk.t] : s.side === 'bottom' ? [s.x, walk.b] :
+                s.side === 'right' ? [walk.r, s.y + 8] : [walk.l, s.y + 8]);
+    });
+
+    seats.forEach(function (s, id) {
       s.isManagerSeat = id === 3;
       s.adjacent = [(id + N - 1) % N, (id + 1) % N];
       // 4인 테이블 번호 (왼쪽부터 0~3). 양 끝자리는 가장 가까운 끝 테이블에 포함
       s.tables = [s.side === 'left' ? 0 : s.side === 'right' ? 3 : Math.floor((s.x - x0) / (STEP * 2))];
+      s.center = 1 - Math.abs(s.x - 160) / (160 - xL);                // 긴 테이블의 가운데일수록 1
       s.facing = { top: 'front', bottom: 'back', left: 'right', right: 'left' }[s.side];
     });
     seats.forEach(function (s) {
@@ -611,29 +745,18 @@
         return o !== s && (o.tables[0] === s.tables[0] || s.adjacent.indexOf(o.id) >= 0);
       }).map(function (o) { return o.id; });
     });
-    return {
+    return withPaths({
       type: 'rect', title: '직사각형 테이블', seats: seats, labelMaxW: 82,
       rect: { x: x0, y: top, w: STEP * 8, h: bottom - top },
-      pathTo: function (seat) {
-        var pts = [[DOOR.x, 222], [DOOR.x, walk.b]];
-        var sx = seat.x, base = seat.y + 8;
-        if (seat.side === 'bottom') {
-          pts.push([sx, walk.b]);
-        } else {
-          var wx = sx < 160 ? walk.l : walk.r;
-          pts.push([wx, walk.b]);
-          if (seat.side === 'top') { pts.push([wx, walk.t]); pts.push([sx, walk.t]); }
-          else pts.push([wx, base]);
-        }
-        pts.push([sx, base]);
-        return pts;
-      },
       labelPos: function (seat) {
         if (seat.isManagerSeat) return { x: seat.x * PX, y: seat.y * PX - 58, maxW: 120 };   // 왕관 위로
         return { x: seat.x * PX, y: seat.y * PX + (seat.side === 'top' ? -44 : 38) };
       },
+      tableSpot: function () {
+        return [x0 + 6 + Math.random() * (STEP * 8 - 14), top + 4 + Math.random() * (bottom - top - 9)];
+      },
       drawTable: drawRectTable
-    };
+    }, ring, doorAcc);
   }
 
   /* ==========================================================
@@ -950,6 +1073,14 @@
 
   /* ==========================================================
    * 6. 게임 상태 · 애니메이션 · 화면 출력
+   * ----------------------------------------------------------
+   * 진행 순서(phase): ready → running(입장) → finale(지점장 퇴장) → done(완료)
+   *
+   * 걷는 사람(walker)은 "할 일 목록(actions)"을 순서대로 처리합니다.
+   *   { path: [[x,y],...], speed: 배속 }   길 따라 걷기
+   *   { wait: 초, pose: 자세, dir: 방향 }  잠깐 멈춤
+   *   { fn: function (w) {...} }           한 번 실행 (말풍선, 착석 등)
+   * 돌발 이벤트는 이 목록을 다르게 짜 주는 것뿐이라 쉽게 추가할 수 있습니다.
    * ========================================================== */
   var PEOPLE = (window.CHARACTERS || []).slice();
   var layouts = { round: buildRoundLayout(), rect: buildRectLayout() };
@@ -963,19 +1094,14 @@
   var art = makeCanvas(ART_W, ART_H), artCtx = art.getContext('2d');
   var bg = makeCanvas(ART_W, ART_H), bgCtx = bg.getContext('2d');
 
+  var EVENTS_PER_GAME = [5, 6];    // 한 게임에 나오는 돌발 이벤트 수 (최소, 최대)
+
   var state = {
     tableType: 'round',
     layout: layouts.round,
-    phase: 'ready',        // 'ready' | 'running' | 'done'
-    seated: [],            // [{ person, seat, at }]
-    walkers: [],           // [{ person, seat, path, seg, x, y, dir, dist }]
-    queue: [],             // 입장 대기 [{ person, seat }]
-    spawnTimer: 0,
-    total: 0,
-    time: 0,
-    doneAt: 0,
-    confetti: [],
-    sparkles: []
+    phase: 'ready',
+    timeScale: 1,          // 테스트용 배속
+    time: 0
   };
 
   function rebuildBackground() {
@@ -988,14 +1114,30 @@
   function reset() {
     state.layout = layouts[state.tableType];
     state.phase = 'ready';
-    state.walkers = [];
-    state.queue = [];
+    state.seated = [];       // [{ person, seat, at, hidden, busy, cheerUntil }]
+    state.walkers = [];      // [{ person, seat, x, y, dir, dist, pose, actions }]
+    state.queue = [];        // 입장 대기 [{ person, seat }]
+    state.assignment = [];   // 최종 자리 [{ person, seat }] (자리 뺏기에 성공하면 바뀜)
+    state.plan = {};         // 몇 번째 입장 때 어떤 이벤트가 나올지
+    state.eventLog = [];
+    state.spawned = 0;
+    state.total = 0;
+    state.spawnTimer = 0;
+    state.timeline = [];     // [{ at, fn }] 예약된 연출
+    state.bubbles = [];      // 말풍선
+    state.pops = [];         // 튀어 오르는 글자 ("퍽!")
+    state.clouds = [];       // 싸움 먼지구름
+    state.puffs = [];        // 달릴 때 먼지
+    state.bills = [];        // 지점장님이 던진 돈
+    state.jumpFish = null;
+    state.boostUntil = 0;
+    state.allFront = false;
+    state.managerLeft = null;   // 퇴장한 지점장 { person, seat }
     state.confetti = [];
     state.sparkles = [];
-    state.total = 0;
     // 고정석(지점장님)은 시작 전부터 착석
-    state.seated = fixedOnly(PEOPLE, state.layout.seats).map(function (a) {
-      return { person: a.person, seat: a.seat, at: -10 };
+    fixedOnly(PEOPLE, state.layout.seats).forEach(function (a) {
+      state.seated.push({ person: a.person, seat: a.seat, at: -10 });
     });
     rebuildBackground();
     refreshRoster();
@@ -1013,24 +1155,271 @@
     return assignSeats(fixedPeople, seats, fixedRules);
   }
 
+  function pick(list) { return list[Math.floor(Math.random() * list.length)]; }
+
   /** 시작: 섞어서 배정하고 한 명씩 입장 */
   function start() {
     reset();
-    var assignment = assignSeats(PEOPLE, state.layout.seats, RULES);
+    state.assignment = assignSeats(PEOPLE, state.layout.seats, RULES);
     var seatedIds = {};
     state.seated.forEach(function (s) { seatedIds[s.person.id] = true; });
-    state.queue = shuffle(assignment.filter(function (a) { return !seatedIds[a.person.id]; }), Math.random);
+    state.queue = shuffle(state.assignment.filter(function (a) { return !seatedIds[a.person.id]; }), Math.random);
     state.total = state.queue.length;
+    state.plan = planEvents(state.total);
     state.spawnTimer = 0.3;
     state.phase = 'running';
     refreshRoster();
     updateUi();
-    if (!state.total) finish();
+    if (!state.total) startFinale();
+  }
+
+  /* ---------- 돌발 이벤트 계획 ---------- */
+  // 자리 싸움은 매 게임 1번 이상, 나머지는 무작위로 골라 총 5~6번
+  function planEvents(total) {
+    var plan = {};
+    var slots = [];
+    for (var i = 2; i <= total - 2; i++) slots.push(i);      // 처음 두 명과 마지막 한 명은 평범하게
+    var count = Math.min(slots.length, EVENTS_PER_GAME[0] + Math.floor(Math.random() * (EVENTS_PER_GAME[1] - EVENTS_PER_GAME[0] + 1)));
+    if (count <= 0) return plan;
+    var kinds = ['fight'];
+    if (Math.random() < 0.5) kinds.push('fight');
+    var pool = shuffle(['trip', 'sprint', 'wrong', 'bow', 'cheers', 'boss', 'fish'], Math.random);
+    while (kinds.length < count) kinds.push(pool[(kinds.length - 1) % pool.length]);
+    kinds = shuffle(kinds.slice(0, count), Math.random);
+    shuffle(slots, Math.random).slice(0, count).sort(function (a, b) { return a - b; })
+      .forEach(function (slot, n) { plan[slot] = kinds[n]; });
+    return plan;
+  }
+
+  /* ---------- 말풍선 · 효과 ---------- */
+  function say(target, text, dur) {
+    state.bubbles = state.bubbles.filter(function (b) { return b.target !== target; });
+    state.bubbles.push({ target: target, text: text, until: state.time + (dur || 1.8) });
+  }
+  function pop(text, ax, ay, color, size) {       // ax, ay = 아트 픽셀 좌표
+    state.pops.push({ text: text, x: ax * PX, y: ay * PX, t0: state.time, life: 0.9, color: color || '#e2574c', size: size || 22 });
+  }
+  function managerEntry() { return state.seated.filter(function (s) { return s.person.isManager; })[0]; }
+  function seatPerson(person, seat) {
+    var entry = { person: person, seat: seat, at: state.time };
+    state.seated.push(entry);
+    setRoster(person.id, person.isManager ? 'fixed' : 'done');
+    updateUi();
+    return entry;
+  }
+  function newWalker(person, seat, x, y) {
+    var w = { person: person, seat: seat, x: x, y: y, dir: 'back', dist: 0, pose: 'walk', actions: [] };
+    state.walkers.push(w);
+    return w;
+  }
+  var SIT = { fn: function (w) { seatPerson(w.person, w.seat); w.remove = true; } };
+
+  /* ---------- 입장 (이벤트별 할 일 목록 짜기) ---------- */
+  function spawnNext() {
+    var next = state.queue.shift();
+    var index = state.spawned++;
+    var L = state.layout;
+    var w = newWalker(next.person, next.seat, DOOR.x, DOOR.y);
+    var kind = state.plan[index] || 'normal';
+    var path = L.pathTo(next.seat);
+    setRoster(next.person.id, 'walk');
+
+    // 조건이 안 맞으면 다른 이벤트로 대체
+    var target = null, wrongSeat = null;
+    if (kind === 'fight') {
+      var candidates = state.seated.filter(function (s) { return !s.person.isManager && !s.busy && !s.hidden; });
+      if (candidates.length) target = pick(candidates); else kind = 'trip';
+    }
+    if (kind === 'wrong') {
+      if (state.queue.length >= 4) wrongSeat = pick(state.queue.slice(3)).seat; else kind = 'trip';
+    }
+    if (kind === 'cheers' && state.seated.length < 3) kind = 'boss';
+    if (kind === 'boss' && !managerEntry()) kind = 'sprint';
+    if (kind !== 'normal') state.eventLog.push(kind);
+
+    switch (kind) {
+      case 'sprint':                                   // 지각! 전력 질주
+        say(w, pick(['늦었다 늦었어!!', '죄송합니다~!!', '비켜요 비켜~!']), 2);
+        w.actions = [{ path: path, speed: 2.4, dust: true }, SIT];
+        break;
+
+      case 'trip':                                     // 걸어가다 꽈당
+        var cut = Math.max(2, Math.min(path.length - 1, Math.floor(path.length / 2)));
+        w.actions = [
+          { path: path.slice(0, cut) },
+          { fn: function (w) { pop('꽈당!', w.x, w.y - 22); } },
+          { wait: 1.1, pose: 'fall' },
+          { fn: function (w) { say(w, pick(['아야…', '아무도 못 봤겠지…', '바닥이 미끄럽네;;']), 1.6); } },
+          { wait: 0.6, pose: 'stand', dir: 'front' },
+          { path: path.slice(cut) }, SIT
+        ];
+        break;
+
+      case 'bow':                                      // 지점장님께 90도 인사
+        w.actions = [
+          { path: [path[0], [DOOR.x, 210]] },
+          { fn: function (w) {
+            say(w, pick(['안녕하십니까!!', '지점장님 안녕하세요!!']), 1.5);
+            var m = managerEntry();
+            if (m) { say(m, pick(['어~ 왔나', '어서 와~']), 1.8); m.cheerUntil = state.time + 0.8; }
+          } },
+          { wait: 1.3, pose: 'bow', dir: 'back' },
+          { path: path.slice(1) }, SIT
+        ];
+        break;
+
+      case 'wrong':                                    // 남의 자리에 앉았다가 머쓱
+        w.actions = [
+          { path: L.pathTo(wrongSeat) },
+          { fn: function (w) { say(w, pick(['후~ 여기 앉아야지', '명당이네~']), 1.3); } },
+          { wait: 1.5, pose: 'sit' },
+          { fn: function (w) { pop('!?', w.x, w.y - 24, '#2c6fb5'); say(w, pick(['앗, 내 자리가 아니네?!', '어? 여기가 아닌가…']), 1.5); } },
+          { wait: 0.9, pose: 'sit' },
+          { path: L.pathBetween(wrongSeat, next.seat) }, SIT
+        ];
+        break;
+
+      case 'fight':                                    // 이미 앉은 사람과 자리 싸움
+        target.busy = true;
+        var toTarget = L.pathTo(target.seat);
+        toTarget[toTarget.length - 1] = L.standBehind(target.seat);
+        w.actions = [
+          { path: toTarget },
+          { fn: function (w) {
+            say(w, pick(['거기 내 자리야!', '그 자리 내가 찜했는데?', '비켜 비켜~']), 1.5);
+            say(target, pick(['무슨 소리! 내 자리거든?', '먼저 앉은 사람이 임자지!']), 1.5);
+          } },
+          { wait: 1.5, pose: 'stand', dir: target.seat.facing },
+          { fn: function () {
+            target.hidden = true;
+            state.clouds.push({ x: target.seat.x, y: target.seat.y + 3, until: state.time + 1.9, nextPop: 0 });
+            state.bubbles = state.bubbles.filter(function (b) { return b.target !== w && b.target !== target; });
+          } },
+          { wait: 1.9, pose: 'hidden' },
+          { fn: function (w) { resolveFight(w, target); } }
+        ];
+        break;
+
+      case 'cheers':                                   // 먼저 온 사람들끼리 건배
+        shuffle(state.seated.filter(function (s) { return !s.hidden && !s.busy; }), Math.random).slice(0, 4)
+          .forEach(function (s, n) {
+            say(s, ['짠~!', '건배!', '위하여~!', '원샷!'][n], 1.8);
+            s.cheerUntil = state.time + 1.8;
+            pop('짠!', s.seat.x, s.seat.y - 16, '#e0a92e', 16);
+          });
+        w.actions = [{ path: path }, SIT];
+        break;
+
+      case 'boss':                                     // 지점장님 호통 → 다들 빨라짐
+        var boss = managerEntry();
+        say(boss, pick(['빨리빨리 안 앉나!', '회 다 마르겠다~!']), 2.2);
+        boss.cheerUntil = state.time + 1.2;
+        state.boostUntil = state.time + 3.5;
+        state.walkers.forEach(function (o) { if (o.pose === 'walk') say(o, pick(['넵!!', '갑니다 가요!']), 1.4); });
+        w.actions = [{ path: path }, SIT];
+        break;
+
+      case 'fish':                                     // 수족관 물고기 탈출
+        state.jumpFish = { t0: state.time, dur: 1.5, side: Math.random() < 0.5 ? 0 : 1 };
+        say(w, pick(['어어?! 물고기가!', '저거 오늘 횟감 아니야?']), 2);
+        w.actions = [{ wait: 1.0, pose: 'stand', dir: 'back' }, { path: path }, SIT];
+        break;
+
+      default:
+        w.actions = [{ path: path }, SIT];
+    }
+  }
+
+  /** 자리 싸움 결과: 규칙에 어긋나지 않을 때만 자리를 뺏을 수 있습니다 */
+  function resolveFight(w, target) {
+    var L = state.layout;
+    var mine = w.seat, theirs = target.seat;
+    target.hidden = false;
+    target.busy = false;
+    var swapped = state.assignment.map(function (a) {
+      if (a.person === w.person) return { person: a.person, seat: theirs };
+      if (a.person === target.person) return { person: a.person, seat: mine };
+      return a;
+    });
+    var out = L.ring[theirs.acc];
+    var win = Math.random() < 0.65 && violations(swapped, L.seats) === 0;
+
+    if (win) {                                         // 뺏기 성공 → 진 사람이 내 자리로
+      state.assignment = swapped;
+      state.seated.splice(state.seated.indexOf(target), 1);
+      var me = seatPerson(w.person, theirs);
+      w.remove = true;
+      say(me, pick(['이 자리는 내 거다!', '승리~!']), 1.8);
+      me.cheerUntil = state.time + 1.5;
+      var loser = newWalker(target.person, mine, out[0], out[1]);
+      setRoster(target.person.id, 'walk');
+      loser.actions = [
+        { fn: function (o) { say(o, pick(['으악, 뺏겼다…', '내 자리가…ㅠㅠ']), 1.8); } },
+        { wait: 1.3, pose: 'fall' },
+        { path: L.pathBetween(theirs, mine) }, SIT
+      ];
+      state.eventLog.push('fight:win');
+    } else {                                           // 실패 → 튕겨 나와 원래 자리로
+      w.x = out[0]; w.y = out[1];
+      say(target, pick(['어림없지!', '내 자리 넘보지 마~']), 1.8);
+      target.cheerUntil = state.time + 1.5;
+      w.actions = [
+        { fn: function (o) { say(o, pick(['졌다…', '다음엔 두고 보자…']), 1.8); } },
+        { wait: 1.3, pose: 'fall' },
+        { path: L.pathBetween(theirs, mine) }, SIT
+      ];
+      state.eventLog.push('fight:lose');
+    }
+    pop(win ? '뺏었다!' : '방어 성공!', theirs.x, theirs.y - 20, '#e0a92e', 20);
+  }
+
+  /* ---------- 마무리: 지점장님이 돈을 던지고 퇴장 ---------- */
+  function at(delay, fn) { state.timeline.push({ at: state.time + delay, fn: fn }); }
+
+  function startFinale() {
+    var boss = managerEntry();
+    if (!boss) { finish(); return; }
+    state.phase = 'finale';
+    updateUi();
+    var L = state.layout, seat = boss.seat, person = boss.person;
+    var hx = seat.x, hy = seat.y - 6;
+
+    at(0.6, function () { say(boss, '다들 앉았나? 좋아!', 1.8); });
+    at(2.6, function () {                              // 자리에서 일어남
+      state.seated.splice(state.seated.indexOf(boss), 1);
+      state.managerLeft = { person: person, seat: seat };
+      var w = newWalker(person, seat, seat.x, seat.y + 8);
+      w.dir = 'front';
+      say(w, '오늘은 내가 쏜다!!', 2.4);
+      w.actions = [
+        { wait: 3.6, pose: 'stand', dir: 'front' },
+        { fn: function (o) { say(o, '난 먼저 간다~ 맛있게들 먹어!', 2.6); } },
+        { wait: 1.4, pose: 'stand', dir: 'front' },
+        { path: L.pathOut(seat) },
+        { fn: function (o) { o.remove = true; setRoster(person.id, 'left'); finish(); } }
+      ];
+    });
+    at(3.8, function () {                              // 돈 뿌리기
+      for (var i = 0; i < 22; i++) {
+        var p = L.tableSpot();
+        state.bills.push({ x0: hx, y0: hy, x1: p[0], y1: p[1], t0: state.time + i * 0.05, dur: 0.55 + Math.random() * 0.3, kind: i % 3 });
+      }
+      pop('촤악~!', hx, seat.y + 30, '#e0a92e', 26);
+    });
+    at(4.9, function () {                              // 환호
+      state.allFront = true;
+      var lines = shuffle(['와아아~!!', '지점장님 최고!!', '감사합니다!!', '잘 먹겠습니다!!', '역시 지점장님!'], Math.random);
+      shuffle(state.seated, Math.random).forEach(function (s, n) {
+        s.cheerUntil = state.time + 3.2;
+        if (n < 5) say(s, lines[n], 2.6);
+      });
+    });
   }
 
   function finish() {
     state.phase = 'done';
     state.doneAt = state.time;
+    state.allFront = true;
     for (var i = 0; i < 140; i++) spawnConfetti(true);
     updateUi();
   }
@@ -1049,60 +1438,140 @@
     });
   }
 
+  /* ---------- 매 프레임 갱신 ---------- */
+  // 걷는 사람 한 명의 할 일 목록을 dt 초만큼 진행
+  function stepWalker(w, dt) {
+    var guard = 0;
+    while (dt > 0 && !w.remove && guard++ < 200) {
+      var a = w.actions[0];
+      if (!a) { w.remove = true; break; }
+      if (a.fn) { w.actions.shift(); a.fn(w); continue; }
+      if (a.wait != null) {
+        w.pose = a.pose || 'stand';
+        if (a.dir) w.dir = a.dir;
+        if (a.wait > dt) { a.wait -= dt; dt = 0; }
+        else { dt -= a.wait; w.actions.shift(); w.pose = 'walk'; }
+        continue;
+      }
+      // 길 따라 걷기
+      w.pose = 'walk';
+      if (!a.path.length) { w.actions.shift(); continue; }
+      var speed = WALK_SPEED * (a.speed || 1) * (state.time < state.boostUntil ? 1.8 : 1);
+      var tx = a.path[0][0], ty = a.path[0][1];
+      var dx = tx - w.x, dy = ty - w.y, d = Math.sqrt(dx * dx + dy * dy);
+      if (d > 0.01) w.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'front' : 'back');
+      var stepLen = speed * dt;
+      if (d <= stepLen) { w.x = tx; w.y = ty; w.dist += d; a.path.shift(); dt -= d / speed; }
+      else { w.x += dx / d * stepLen; w.y += dy / d * stepLen; w.dist += stepLen; dt = 0; }
+      if ((a.dust || state.time < state.boostUntil) && Math.random() < 0.35) {
+        state.puffs.push({ x: w.x + (Math.random() - 0.5) * 4, y: w.y - 1, t0: state.time });
+      }
+    }
+  }
+
   function update(dt) {
+    dt *= state.timeScale;
     state.time += dt;
+    var now = state.time, i;
+
+    // 예약된 연출
+    state.timeline.sort(function (a, b) { return a.at - b.at; });
+    while (state.timeline.length && state.timeline[0].at <= now) state.timeline.shift().fn();
 
     if (state.phase === 'running') {
-      // 입장
       state.spawnTimer -= dt;
       if (state.queue.length && state.spawnTimer <= 0) {
-        var next = state.queue.shift();
-        state.walkers.push({
-          person: next.person, seat: next.seat, path: state.layout.pathTo(next.seat),
-          seg: 0, x: DOOR.x, y: DOOR.y, dir: 'back', dist: 0
-        });
+        spawnNext();
         state.spawnTimer = SPAWN_INTERVAL;
-        setRoster(next.person.id, 'walk');
       }
-      // 걷기
-      for (var i = state.walkers.length - 1; i >= 0; i--) {
-        var w = state.walkers[i];
-        var remain = WALK_SPEED * dt;
-        while (remain > 0 && w.seg < w.path.length) {
-          var tx = w.path[w.seg][0], ty = w.path[w.seg][1];
-          var dx = tx - w.x, dy = ty - w.y, d = Math.sqrt(dx * dx + dy * dy);
-          if (d > 0.01) {
-            w.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'front' : 'back');
-          }
-          if (d <= remain) { w.x = tx; w.y = ty; w.seg++; remain -= d; w.dist += d; }
-          else { w.x += dx / d * remain; w.y += dy / d * remain; w.dist += remain; remain = 0; }
-        }
-        if (w.seg >= w.path.length) {       // 도착 → 착석
-          state.walkers.splice(i, 1);
-          state.seated.push({ person: w.person, seat: w.seat, at: state.time });
-          setRoster(w.person.id, 'done');
-          updateUi();
-        }
-      }
-      if (!state.queue.length && !state.walkers.length) finish();
+    }
+    if (state.phase === 'running' || state.phase === 'finale') {
+      var list = state.walkers.slice();
+      for (i = 0; i < list.length; i++) stepWalker(list[i], dt);
+      state.walkers = state.walkers.filter(function (w) { return !w.remove; });
+      if (state.phase === 'running' && !state.queue.length && !state.walkers.length) startFinale();
     }
 
+    // 싸움 먼지구름에서 튀어나오는 글자
+    state.clouds = state.clouds.filter(function (c) {
+      if (now >= c.nextPop) {
+        c.nextPop = now + 0.28;
+        pop(pick(['퍽!', '팍!', '으악!', '아얏!', '빡!']), c.x + (Math.random() - 0.5) * 30, c.y - 14 - Math.random() * 12,
+          pick(['#e2574c', '#e0a92e', '#2c6fb5']), 18);
+      }
+      return now < c.until;
+    });
+    if (state.jumpFish && now > state.jumpFish.t0 + state.jumpFish.dur) {
+      var b = BASINS[state.jumpFish.side];
+      pop('첨벙!', b.x + (state.jumpFish.side ? -8 : 8), b.y - 14, '#2c6fb5', 20);
+      state.jumpFish = null;
+    }
+    state.bubbles = state.bubbles.filter(function (bb) { return now < bb.until; });
+    state.pops = state.pops.filter(function (p) { return now < p.t0 + p.life; });
+    state.puffs = state.puffs.filter(function (p) { return now < p.t0 + 0.5; });
+
     if (state.phase === 'done') {
-      var since = state.time - state.doneAt;
+      var since = now - state.doneAt;
       if (since < 6 && Math.random() < dt * 45) spawnConfetti(false);
       if (since < 8 && Math.random() < dt * 14) {
         state.sparkles.push({ x: 60 + Math.random() * (VIEW_W - 120), y: 110 + Math.random() * 540, t: 0, life: 0.5 + Math.random() * 0.5 });
       }
     }
     state.confetti = state.confetti.filter(function (p) {
-      p.x += (p.vx + Math.sin(state.time * 3 + p.phase) * 40) * dt;
+      p.x += (p.vx + Math.sin(now * 3 + p.phase) * 40) * dt;
       p.y += p.vy * dt;
       return p.y < VIEW_H + 20;
     });
     state.sparkles = state.sparkles.filter(function (s) { s.t += dt; return s.t < s.life; });
   }
 
+  /* ---------- 그리기 ---------- */
   var WALK_FRAMES = [1, 0, 2, 0];
+  var BILL_COLORS = [['#f0d878', '#b9963a'], ['#9fd49a', '#4f8a4c'], ['#f0d878', '#b9963a']];   // 5만원권·만원권
+
+  function drawBill(a, x, y, kind, flip) {
+    var c = BILL_COLORS[kind % BILL_COLORS.length];
+    x = Math.round(x); y = Math.round(y);
+    if (flip) { R(a, x - 1, y - 2, 2, 4, c[0]); R(a, x - 1, y - 1, 2, 1, c[1]); }
+    else { R(a, x - 2, y - 1, 5, 3, c[1]); R(a, x - 2, y - 1, 5, 2, c[0]); R(a, x, y - 1, 1, 2, c[1]); }
+  }
+
+  function drawWalker(a, w, t) {
+    var x = Math.round(w.x), y = Math.round(w.y), p = w.person;
+    if (w.pose === 'hidden') return;
+    if (w.pose === 'fall') {                          // 넘어짐: 옆으로 눕히고 별이 빙글빙글
+      a.save();
+      a.translate(x, y - 3);
+      a.rotate(Math.PI / 2);
+      drawCharacter(a, p, -13, -10, { dir: 'front' });
+      a.restore();
+      for (var k = 0; k < 3; k++) {
+        var ang = t * 6 + k * 2.1;
+        R(a, Math.round(x - 9 + Math.cos(ang) * 5), Math.round(y - 14 + Math.sin(ang) * 2), 2, 2, '#f5c542');
+      }
+    } else if (w.pose === 'sit') {
+      drawCharacter(a, p, x - 8, y - 17, { sit: true, dir: 'front' });
+    } else if (w.pose === 'bow') {                    // 꾸벅꾸벅
+      drawCharacter(a, p, x - 8, y - 20 + (Math.sin(t * 9) > 0 ? 3 : 0), { dir: w.dir });
+    } else {
+      var frame = w.pose === 'walk' ? WALK_FRAMES[Math.floor(w.dist / 4) % 4] : 0;
+      drawCharacter(a, p, x - 8, y - 20, { dir: w.dir, frame: frame });
+    }
+  }
+
+  function drawCloud(a, c, t) {                       // 싸움 먼지구름
+    var i, n = Math.floor(t * 12);
+    var rnd = seededRandom(n * 31 + 5);
+    for (i = 0; i < 7; i++) {
+      disc(a, Math.round(c.x + (rnd() - 0.5) * 20), Math.round(c.y + (rnd() - 0.5) * 12), 4 + Math.floor(rnd() * 4), i % 2 ? '#e6edf2' : '#ffffff');
+    }
+    for (i = 0; i < 4; i++) {
+      var sx = Math.round(c.x + (rnd() - 0.5) * 30), sy = Math.round(c.y - 4 + (rnd() - 0.5) * 22);
+      R(a, sx, sy - 1, 1, 3, '#f5c542'); R(a, sx - 1, sy, 3, 1, '#f5c542');
+    }
+    R(a, Math.round(c.x + (rnd() - 0.5) * 22), Math.round(c.y + (rnd() - 0.5) * 12), 3, 2, '#2a2230');   // 삐져나온 신발
+    R(a, Math.round(c.x + (rnd() - 0.5) * 22), Math.round(c.y + (rnd() - 0.5) * 12), 2, 2, '#f6cfa6');   // 주먹
+  }
 
   function drawLabel(text, cx, cy, isManager, maxW) {
     var size = 12, tw;
@@ -1122,38 +1591,87 @@
     ctx.fillText(text, cx, cy + 1);
   }
 
+  function drawBubble(b) {                            // 말풍선
+    var tg = b.target, ax, ay;
+    if (tg.seat && tg.actions === undefined) { ax = tg.seat.x; ay = tg.seat.y - 12; }   // 앉은 사람
+    else { ax = tg.x; ay = tg.y - (tg.pose === 'fall' ? 12 : 24); }                    // 걷는 사람
+    ctx.font = 'bold 13px ' + FONT;
+    var tw = Math.ceil(ctx.measureText(b.text).width), w = tw + 16, h = 24;
+    var cx = Math.max(w / 2 + 4, Math.min(VIEW_W - w / 2 - 4, ax * PX));
+    var y = Math.max(100, ay * PX - h - 8), x = Math.round(cx - w / 2);
+    ctx.fillStyle = '#1b2f4f';
+    ctx.fillRect(x, y + 3, w, h - 6); ctx.fillRect(x + 3, y, w - 6, h);
+    ctx.fillRect(Math.round(ax * PX) - 5, y + h - 1, 10, 4); ctx.fillRect(Math.round(ax * PX) - 2, y + h + 3, 4, 3);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(x + 2, y + 5, w - 4, h - 10); ctx.fillRect(x + 5, y + 2, w - 10, h - 4);
+    ctx.fillRect(Math.round(ax * PX) - 3, y + h - 3, 6, 4);
+    ctx.fillStyle = '#1b2f4f';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(b.text, cx, y + h / 2 + 1);
+  }
+
   function nameOf(p) { return (p.rank ? p.rank + ' ' : '') + p.name; }
 
-  /** 화면 그리기. clean=true 이면 저장용(꽃가루 없이, 흔들림 없이) */
+  /** 화면 그리기. clean=true 이면 저장용 자리표(효과 없이, 지점장님도 자리에 앉은 모습) */
   function render(clean) {
     var t = state.time, done = state.phase === 'done';
-    var a = artCtx;
+    var allFront = state.allFront || done;
+    var a = artCtx, L = state.layout;
     a.drawImage(bg, 0, 0);
 
     // 수족관 물고기 등 움직이는 배경
     drawAmbient(a, clean ? 0 : t);
 
+    // 테이블에 떨어진 돈
+    var flying = [];
+    state.bills.forEach(function (b) {
+      var p = (t - b.t0) / b.dur;
+      if (p >= 1 || clean) drawBill(a, b.x1, b.y1, b.kind, false);
+      else if (p > 0) flying.push({ b: b, p: p });
+    });
+
     // 캐릭터 (아래쪽에 있는 사람이 위에 그려지도록 y 정렬)
+    var seatedList = state.seated.slice();
+    if (clean && state.managerLeft) seatedList.push({ person: state.managerLeft.person, seat: state.managerLeft.seat, at: -10 });
     var items = [];
-    state.seated.forEach(function (s) {
+    seatedList.forEach(function (s) {
+      if (s.hidden && !clean) return;
       var base = s.seat.y + 8, hop = 0;
       var since = t - s.at;
       if (!clean) {
         if (since < 0.3) hop = -Math.round(Math.sin(Math.PI * since / 0.3) * 3);
-        else if (done && Math.sin(t * 7 + s.seat.id * 1.7) > 0.5) hop = -1;
+        else if ((done || t < (s.cheerUntil || 0)) && Math.sin(t * 7 + s.seat.id * 1.7) > 0.3) hop = -1 - (done ? 0 : 1);
       }
       items.push({ y: base, draw: function () {
-        drawCharacter(a, s.person, s.seat.x - 8, base - 17 + hop, { sit: true, dir: done ? 'front' : s.seat.facing });
+        drawCharacter(a, s.person, s.seat.x - 8, base - 17 + hop, { sit: true, dir: allFront ? 'front' : s.seat.facing });
       } });
     });
-    state.walkers.forEach(function (w) {
-      var x = Math.round(w.x), y = Math.round(w.y);
-      items.push({ y: y, draw: function () {
-        drawCharacter(a, w.person, x - 8, y - 20, { dir: w.dir, frame: WALK_FRAMES[Math.floor(w.dist / 4) % 4] });
-      } });
-    });
+    if (!clean) {
+      state.walkers.forEach(function (w) {
+        items.push({ y: w.y, draw: function () { drawWalker(a, w, t); } });
+      });
+      state.puffs.forEach(function (p) {
+        var k = (t - p.t0) / 0.5;
+        disc(a, Math.round(p.x), Math.round(p.y - k * 3), k < 0.5 ? 2 : 1, '#eef3f6');
+      });
+    }
     items.sort(function (p, q) { return p.y - q.y; });
     items.forEach(function (it) { it.draw(); });
+
+    if (!clean) {
+      state.clouds.forEach(function (c) { drawCloud(a, c, t); });
+      flying.forEach(function (f) {
+        var b = f.b, p = f.p;
+        drawBill(a, b.x0 + (b.x1 - b.x0) * p, b.y0 + (b.y1 - b.y0) * p - Math.sin(Math.PI * p) * 16, b.kind, Math.sin(t * 30 + b.x1) > 0);
+      });
+      if (state.jumpFish) {                           // 수족관 → 대야로 뛰는 물고기
+        var jf = state.jumpFish, q = Math.max(0, Math.min(1, (t - jf.t0) / jf.dur));
+        var tank = TANKS[jf.side], basin = BASINS[jf.side];
+        var fx0 = tank.x + (jf.side ? 20 : tank.w - 20), fy0 = tank.y + 6;
+        drawFish(a, Math.round(fx0 + (basin.x - fx0) * q), Math.round(fy0 + (basin.y - 2 - fy0) * q - Math.sin(Math.PI * q) * 26),
+          '#f58b5b', jf.side === 1);
+      }
+    }
 
     drawEntrance(a, clean ? 0 : t);
 
@@ -1164,15 +1682,32 @@
     ctx.setTransform(SS, 0, 0, SS, 0, 0);
     drawSigns(ctx, done);
 
-    // 이름표 ("직급 이름")
-    var layout = state.layout;
-    state.seated.forEach(function (s) {
+    // 이름표 ("직급 이름") — 퇴장한 지점장님 자리에도 이름표는 남김
+    var labelList = state.seated.slice();
+    if (state.managerLeft) labelList.push(state.managerLeft);
+    labelList.forEach(function (s) {
       var text = nameOf(s.person);
       ctx.font = 'bold 12px ' + FONT;
-      var w = Math.min(ctx.measureText(text).width + 10, layout.labelMaxW);
-      var pos = layout.labelPos(s.seat, w);
-      drawLabel(text, Math.round(pos.x), Math.round(pos.y), s.person.isManager, pos.maxW || layout.labelMaxW);
+      var w = Math.min(ctx.measureText(text).width + 10, L.labelMaxW);
+      var pos = L.labelPos(s.seat, w);
+      drawLabel(text, Math.round(pos.x), Math.round(pos.y), s.person.isManager, pos.maxW || L.labelMaxW);
     });
+
+    if (!clean) {
+      state.bubbles.forEach(drawBubble);
+      state.pops.forEach(function (p) {
+        var k = (t - p.t0) / p.life;
+        var size = p.size * (k < 0.15 ? 0.6 + k / 0.15 * 0.5 : 1.1 - (k - 0.15) * 0.12);
+        ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1;
+        ctx.font = 'bold ' + Math.round(size) + 'px ' + FONT;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.lineWidth = 4; ctx.strokeStyle = '#ffffff'; ctx.lineJoin = 'round';
+        ctx.strokeText(p.text, p.x, p.y - k * 18);
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.text, p.x, p.y - k * 18);
+      });
+      ctx.globalAlpha = 1;
+    }
 
     if (done) {
       // 완료 현수막
@@ -1227,7 +1762,7 @@
     save: document.getElementById('btnSave')
   };
   var rosterItems = {};
-  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료', fixed: '고정석 ★' };
+  var BADGE = { wait: '대기 중', walk: '입장 중', done: '착석 완료', fixed: '고정석 ★', left: '쏘고 퇴장' };
 
   function buildRoster() {
     el.count.textContent = '(' + PEOPLE.length + '명)';
@@ -1261,10 +1796,11 @@
     el.start.disabled = ph !== 'ready';
     el.retry.disabled = ph === 'ready';
     el.save.disabled = ph !== 'done';
-    var arrived = state.total - state.queue.length - state.walkers.length;
+    var arrived = state.seated.filter(function (s) { return !s.person.isManager; }).length;
     el.status.textContent =
       ph === 'ready' ? '[시작]을 누르면 직원들이 한 명씩 입장합니다.' :
       ph === 'running' ? '입장 중…  ' + arrived + ' / ' + state.total + '명 착석' :
+      ph === 'finale' ? '모두 착석!  지점장님 한 말씀…' :
       '모두 착석 완료!  [결과 PNG 저장]으로 자리표를 저장할 수 있어요.';
   }
 
@@ -1303,5 +1839,5 @@
   requestAnimationFrame(loop);
 
   // 콘솔에서 확인/테스트할 수 있도록 공개
-  window.SeatGame = { assignSeats: assignSeats, RULES: RULES, state: state, layouts: layouts };
+  window.SeatGame = { assignSeats: assignSeats, violations: violations, tierOf: tierOf, RULES: RULES, state: state, layouts: layouts };
 })();

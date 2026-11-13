@@ -91,6 +91,7 @@ body {
 .roster li.walk .badge  { border-color: #d98a2b; background: #ffe2b0; color: #8a4b10; }
 .roster li.done .badge  { border-color: #4f8a4c; background: #d6efc4; color: #2f5e2c; }
 .roster li.fixed .badge { border-color: #a8741a; background: #ffe08a; color: #6b4410; }
+.roster li.left .badge  { border-color: #a8741a; background: #ffe08a; color: #6b4410; }
 .roster li.done .name, .roster li.fixed .name { color: #2f5e2c; }
 
 /* ---------- 가운데 게임 영역 ---------- */
