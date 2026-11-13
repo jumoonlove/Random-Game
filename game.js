@@ -1116,6 +1116,7 @@
   var bg = makeCanvas(ART_W, ART_H), bgCtx = bg.getContext('2d');
 
   var EVENTS_PER_GAME = [5, 6];    // 한 게임에 나오는 돌발 이벤트 수 (최소, 최대)
+  var TABLE_SWAP_CHANCE = 1;       // 모두 앉은 뒤 "테이블 체인지"가 일어날 확률 (0 ~ 1)
 
   var state = {
     tableType: 'round',
@@ -1156,6 +1157,7 @@
     state.hearts = [];       // 떠오르는 하트
     state.heartsUntil = 0;
     state.announce = null;   // 입장 알림 { text, until }
+    state.shakeUntil = 0;    // 화면 흔들림
     state.confetti = [];
     state.sparkles = [];
     // 고정석(지점장님)은 시작 전부터 착석
@@ -1408,6 +1410,57 @@
     pop(win ? '뺏었다!' : '방어 성공!', theirs.x, theirs.y - 20, '#e0a92e', 20);
   }
 
+  /* ---------- 테이블 체인지: 모두 앉은 뒤 자리가 통째로 뒤바뀜 ----------
+   * 직사각형: 왼쪽 끝 테이블과 오른쪽 끝 테이블 사람들이 통째로 맞바뀜
+   * 원형    : 테이블 왼쪽과 오른쪽이 통째로 맞바뀜 (지점장님과 맞은편 자리는 그대로)
+   * 바뀐 결과가 규칙에 어긋나면 일어나지 않습니다. */
+  function startTableSwap() {
+    var L = state.layout, seats = L.seats;
+    function mirrorOf(seat) {                          // 좌우 대칭 위치의 좌석
+      return seats.filter(function (o) { return Math.abs(o.x - (ART_W - seat.x)) <= 1 && o.y === seat.y; })[0];
+    }
+    var moving = seats.filter(function (s) {
+      var m = mirrorOf(s);
+      if (!m || m === s || s.isManagerSeat || m.isManagerSeat) return false;
+      return L.type === 'round' || s.tables[0] === 0 || s.tables[0] === 3;
+    });
+    if (moving.length < 2) return false;
+    var swapped = state.assignment.map(function (a) {
+      return moving.indexOf(a.seat) >= 0 ? { person: a.person, seat: mirrorOf(a.seat) } : a;
+    });
+    if (violations(swapped, seats) !== 0) return false;
+
+    state.phase = 'finale';
+    state.eventLog.push('tableswap');
+    updateUi();
+    var movers = state.seated.filter(function (s) { return moving.indexOf(s.seat) >= 0; });
+
+    at(1.0, function () {                              // 흔들흔들
+      state.shakeUntil = state.time + 2.4;
+      pop('어…? 테이블이 흔들린다?!', 160, 70, '#2c6fb5', 30);
+      shuffle(state.seated, Math.random).slice(0, 5).forEach(function (s) { say(s, pick(['어어?!', '뭐야 뭐야?!', '지진인가?!', '으아아~']), 2); });
+    });
+    at(2.6, function () {                              // 펑! 연기 속으로
+      movers.forEach(function (s) {
+        s.hidden = true;
+        state.clouds.push({ x: s.seat.x, y: s.seat.y + 3, until: state.time + 1.3, quiet: true });
+      });
+      pop('펑!', 160, 100, '#e2574c', 44);
+    });
+    at(3.9, function () {                              // 자리가 바뀌어 나타남
+      movers.forEach(function (s) { s.seat = mirrorOf(s.seat); s.hidden = false; s.at = state.time; });
+      state.assignment = swapped;
+      pop(L.type === 'round' ? '좌우 체인지!!' : '테이블 체인지!!', 160, 72, '#e0a92e', 40);
+      shuffle(movers, Math.random).slice(0, 5).forEach(function (s) {
+        say(s, pick(['어? 여기 어디야?', '내 자리가 바뀌었네?!', '방금 뭐였지…', '옆 사람이 바뀌었어!']), 2.4);
+      });
+      var m = managerEntry();
+      if (m) say(m, '허허, 재밌구만~', 2.4);
+    });
+    at(6.6, startFinale);
+    return true;
+  }
+
   /* ---------- 마무리: 지점장님이 한턱 쏘고 다 같이 건배 ---------- */
   function at(delay, fn) { state.timeline.push({ at: state.time + delay, fn: fn }); }
 
@@ -1530,12 +1583,14 @@
       var list = state.walkers.slice();
       for (i = 0; i < list.length; i++) stepWalker(list[i], dt);
       state.walkers = state.walkers.filter(function (w) { return !w.remove; });
-      if (state.phase === 'running' && !state.queue.length && !state.walkers.length) startFinale();
+      if (state.phase === 'running' && !state.queue.length && !state.walkers.length) {
+        if (!(Math.random() < TABLE_SWAP_CHANCE && startTableSwap())) startFinale();
+      }
     }
 
     // 싸움 먼지구름에서 튀어나오는 글자
     state.clouds = state.clouds.filter(function (c) {
-      if (now >= c.nextPop) {
+      if (!c.quiet && now >= c.nextPop) {
         c.nextPop = now + 0.28;
         pop(pick(['퍽!', '팍!', '으악!', '아얏!', '빡!']), c.x + (Math.random() - 0.5) * 30, c.y - 14 - Math.random() * 12,
           pick(['#e2574c', '#e0a92e', '#2c6fb5']), 18);
@@ -1736,7 +1791,8 @@
     // 확대해서 본 화면에 출력
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(art, 0, 0, canvas.width, canvas.height);
+    var shake = !clean && t < state.shakeUntil ? 4 * SS : 0;         // 테이블 체인지 때 화면 흔들림
+    ctx.drawImage(art, Math.round((Math.random() - 0.5) * shake), Math.round((Math.random() - 0.5) * shake), canvas.width, canvas.height);
     ctx.setTransform(SS, 0, 0, SS, 0, 0);
     drawSigns(ctx, done);
 
