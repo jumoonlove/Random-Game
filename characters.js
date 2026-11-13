@@ -99,7 +99,7 @@
       top: 'shirt', sleeve: 'long', clothColor: WHITE, bottom: 'pants', pantsColor: KHAKI, team: '' },
 
     { id: 13, name: '김지현', rank: '행원',     isManager: false, gender: 'F',
-      hairStyle: 'permPart', hairColor: 'black', skinTone: 'light', glasses: 'round', glassesFrame: 'horn', build: 'normal',
+      hairStyle: 'permPart', hairColor: 'black', skinTone: 'light', glasses: 'false', glassesFrame: 'horn', build: 'normal',
       top: 'cardigan', sleeve: 'long', clothColor: BLACK, innerColor: WHITE, bottom: 'pants', pantsColor: BLACK, team: '' },
 
     { id: 14, name: '이지원', rank: '행원',     isManager: false, gender: 'F',
