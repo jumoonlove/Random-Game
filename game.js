@@ -77,7 +77,9 @@
   //   단, 5명이 앉는 테이블(직사각형 양 끝)은 3명까지 허용합니다.
   //   (9명 대 9명이라 4개 테이블에 2명씩만으로는 나눌 수 없기 때문)
   //   seat.tables = 그 좌석이 속한 "테이블" 번호 목록
-  //   (직사각형: 붙여 놓은 4인 테이블 4개 / 원형: 나란히 앉은 4자리 묶음)
+  //   (직사각형: 붙여 놓은 4인 테이블 4개 / 6인×3: 6인 테이블 3개와 각 테이블의 한쪽 변 3자리
+  //    / 원형: 나란히 앉은 4자리 묶음)
+  //   6인 테이블은 6명이 앉으므로 그룹당 3명까지, 한쪽 변 3자리에는 2명까지입니다.
   var TIERS = {
     junior: ['행원', '대리', '연수생'],
     senior: ['과장', '차장', '팀장', '부지점장', '지점장']
@@ -107,7 +109,8 @@
 
   // 규칙 2) 아래 사람들은 서로 떨어져 앉기 (이름을 추가/삭제하면 됩니다)
   //   seat.near = "붙어 있다"고 보는 좌석 번호 목록
-  //   (직사각형: 같은 4인 테이블 + 바로 옆자리 / 원형: 양옆으로 2칸 이내)
+  //   (직사각형: 같은 4인 테이블 + 바로 옆자리 / 6인×3: 옆자리·맞은편·맞은편 옆자리
+  //    / 원형: 양옆으로 2칸 이내)
   var KEEP_APART = ['이승석', '양만형', '이용진', '이창현'];
   var keepApartRule = {
     name: '특정 인원 떨어뜨리기',
@@ -769,13 +772,65 @@
     });
     return withPaths({
       type: 'rect', title: '직사각형 테이블', seats: seats, labelMaxW: 82,
-      rect: { x: x0, y: top, w: STEP * 8, h: bottom - top },
+      rect: { x: x0, y: top, w: STEP * 8, h: bottom - top }, tableCount: 4, tableW: STEP * 2,
       labelPos: function (seat) {
         if (seat.isManagerSeat) return { x: seat.x * PX, y: seat.y * PX - 58, maxW: 120 };   // 왕관 위로
         return { x: seat.x * PX, y: seat.y * PX + (seat.side === 'top' ? -44 : 38) };
       },
       tableSpot: function () {
         return [x0 + 6 + Math.random() * (STEP * 8 - 14), top + 4 + Math.random() * (bottom - top - 9)];
+      },
+      drawTable: drawRectTable
+    }, ring, doorAcc);
+  }
+
+  // 6인 직사각형 테이블 3개를 붙인 형태 (긴 변 양쪽에 9석씩, 짧은 변에는 자리 없음)
+  //   위쪽 줄 0~8(왼→오), 아래쪽 줄 9~17(오→왼)
+  //   지점장석 = 4번 (입구 맞은편 긴 변의 정가운데 = 가운데 테이블 가운데 자리)
+  function buildRect6Layout() {
+    var N = 18, PER_SIDE = 9, STEP = 28;            // 좌석 간격
+    var x0 = 160 - STEP * PER_SIDE / 2, top = 108, bottom = 144;
+    var yTop = 98, yBot = 156;
+    var walk = { l: x0 - 12, r: 320 - x0 + 12, t: 86, b: 188 };   // 걸어 다니는 통로
+    var seats = [], i;
+    for (i = 0; i < PER_SIDE; i++) seats.push({ x: x0 + STEP / 2 + i * STEP, y: yTop, side: 'top', col: i });
+    for (i = PER_SIDE - 1; i >= 0; i--) seats.push({ x: x0 + STEP / 2 + i * STEP, y: yBot, side: 'bottom', col: i });
+
+    // 통로: 왼쪽 위 모서리에서 시계 방향으로 한 바퀴
+    var ring = [[walk.l, walk.t]], doorAcc = -1;
+    seats.forEach(function (s, id) {
+      s.id = id;
+      if (id === PER_SIDE) { ring.push([walk.r, walk.t]); ring.push([walk.r, walk.b]); }   // 오른쪽 모서리 두 곳
+      if (s.side === 'bottom' && doorAcc < 0 && s.x < DOOR.x) { doorAcc = ring.length; ring.push([DOOR.x, walk.b]); }
+      s.acc = ring.length;
+      ring.push([s.x, s.side === 'top' ? walk.t : walk.b]);
+    });
+    ring.push([walk.l, walk.b]);                                        // 왼쪽 아래 모서리
+
+    seats.forEach(function (s, id) {
+      var tb = Math.floor(s.col / 3);                                    // 6인 테이블 번호 (왼쪽부터 0~2)
+      s.isManagerSeat = id === 4;
+      s.adjacent = seats.filter(function (o) { return o.side === s.side && Math.abs(o.col - s.col) === 1; })
+        .map(function (o) { return o.id; });
+      // 주니어/시니어 규칙용: 테이블 전체(6석) + 테이블의 한쪽 변(3석)
+      s.tables = [tb, tb + s.side];
+      s.center = 1 - Math.abs(s.x - 160) / (160 - x0 - STEP / 2);       // 긴 테이블의 가운데일수록 1
+      s.facing = s.side === 'top' ? 'front' : 'back';
+    });
+    // "붙어 있다" = 옆자리, 맞은편, 맞은편의 옆자리 (테이블이 3개뿐이라 테이블 단위로는 4명을 떨어뜨릴 수 없음)
+    seats.forEach(function (s) {
+      s.near = seats.filter(function (o) { return o !== s && Math.abs(o.col - s.col) <= 1; })
+        .map(function (o) { return o.id; });
+    });
+    return withPaths({
+      type: 'rect6', title: '6인 테이블 3개', seats: seats, labelMaxW: 82,
+      rect: { x: x0, y: top, w: STEP * PER_SIDE, h: bottom - top }, tableCount: 3, tableW: STEP * 3,
+      labelPos: function (seat) {
+        if (seat.isManagerSeat) return { x: seat.x * PX, y: seat.y * PX - 58, maxW: 120 };   // 왕관 위로
+        return { x: seat.x * PX, y: seat.y * PX + (seat.side === 'top' ? -44 : 38) };
+      },
+      tableSpot: function () {
+        return [x0 + 6 + Math.random() * (STEP * PER_SIDE - 14), top + 4 + Math.random() * (bottom - top - 9)];
       },
       drawTable: drawRectTable
     }, ring, doorAcc);
@@ -1058,20 +1113,23 @@
     R(ctx, t.x, t.y + t.h, t.w, 4, '#5c3a21');
     R(ctx, t.x, t.y, t.w, t.h, '#8f5d33');
     R(ctx, t.x + 1, t.y + 1, t.w - 2, t.h - 2, '#c08a58');
-    for (i = 0; i < 4; i++) {                       // 4인 테이블 4개를 붙인 이음새
-      var qx = t.x + i * 56;
+    var count = layout.tableCount || 4, tw = layout.tableW || 56;
+    for (i = 0; i < count; i++) {                   // 작은 테이블을 붙인 이음새
+      var qx = t.x + i * tw;
       if (i > 0) { R(ctx, qx, t.y, 1, t.h, '#8f5d33'); R(ctx, qx, t.y + t.h, 1, 4, '#3f2613'); }
       R(ctx, qx + 6, t.y + 4, 14, 1, '#d3a06c'); R(ctx, qx + 30, t.y + 30, 18, 1, '#d3a06c');
 
       // 테이블마다 모둠회 접시 + 술병 + 매운탕/쌈
-      var px = qx + 15, py = t.y + 13;
+      var px = qx + Math.round(tw / 2) - 13, py = t.y + 13;
       R(ctx, px, py + 1, 26, 11, '#9fb3c4'); R(ctx, px, py, 26, 11, '#f4f7f8');
       R(ctx, px + 1, py + 1, 24, 9, '#2c6fb5'); R(ctx, px + 2, py + 2, 22, 7, '#e3efe6');
       for (var k = 0; k < 5; k++) { hoe(ctx, px + 3 + k * 4, py + 2, k + i); hoe(ctx, px + 3 + k * 4, py + 6, k + i + 3); }
       R(ctx, px + 12, py + 4, 2, 2, '#3f9a5a'); R(ctx, px + 22, py + 5, 1, 1, '#f6cf4a');
-      if (i % 2) beerBottle(ctx, qx + 46, py + 2); else sojuBottle(ctx, qx + 46, py + 2);
-      if (i % 2) ssam(ctx, qx + 8, py + 5); else stew(ctx, qx + 8, py + 5);
-      chojang(ctx, qx + 50, py + 9);
+      if (i % 2) beerBottle(ctx, px + 31, py + 2); else sojuBottle(ctx, px + 31, py + 2);
+      if (tw >= 80) {                               // 6인 테이블은 넓으니 매운탕과 쌈을 둘 다
+        stew(ctx, qx + 11, py + 5); ssam(ctx, qx + tw - 10, py + 5);
+      } else if (i % 2) ssam(ctx, qx + 8, py + 5); else stew(ctx, qx + 8, py + 5);
+      chojang(ctx, px + 35, py + 9);
     }
     // 자리마다 앞접시 + 소주잔
     layout.seats.forEach(function (s, n) {
@@ -1105,7 +1163,7 @@
    * 돌발 이벤트는 이 목록을 다르게 짜 주는 것뿐이라 쉽게 추가할 수 있습니다.
    * ========================================================== */
   var PEOPLE = (window.CHARACTERS || []).slice();
-  var layouts = { round: buildRoundLayout(), rect: buildRectLayout() };
+  var layouts = { round: buildRoundLayout(), rect: buildRectLayout(), rect6: buildRect6Layout() };
 
   var canvas = document.getElementById('game');
   canvas.width = VIEW_W * SS;
@@ -1414,7 +1472,7 @@
   }
 
   /* ---------- 테이블 체인지: 모두 앉은 뒤 자리가 통째로 뒤바뀜 ----------
-   * 직사각형: 왼쪽 끝 테이블과 오른쪽 끝 테이블 사람들이 통째로 맞바뀜
+   * 직사각형·6인×3: 왼쪽 끝 테이블과 오른쪽 끝 테이블 사람들이 통째로 맞바뀜
    * 원형    : 테이블 왼쪽과 오른쪽이 통째로 맞바뀜 (지점장님과 맞은편 자리는 그대로)
    * 바뀐 결과가 규칙에 어긋나면 일어나지 않습니다. */
   function startTableSwap() {
@@ -1425,7 +1483,7 @@
     var moving = seats.filter(function (s) {
       var m = mirrorOf(s);
       if (!m || m === s || s.isManagerSeat || m.isManagerSeat) return false;
-      return L.type === 'round' || s.tables[0] === 0 || s.tables[0] === 3;
+      return L.type === 'round' || s.tables[0] === 0 || s.tables[0] === L.tableCount - 1;   // 양 끝 테이블끼리
     });
     if (moving.length < 2) return false;
     var swapped = state.assignment.map(function (a) {
@@ -1883,6 +1941,7 @@
     status: document.getElementById('status'),
     round: document.getElementById('btnRound'),
     rect: document.getElementById('btnRect'),
+    rect6: document.getElementById('btnRect6'),
     start: document.getElementById('btnStart'),
     retry: document.getElementById('btnRetry'),
     save: document.getElementById('btnSave')
@@ -1919,6 +1978,7 @@
     var ph = state.phase;
     el.round.setAttribute('aria-pressed', String(state.tableType === 'round'));
     el.rect.setAttribute('aria-pressed', String(state.tableType === 'rect'));
+    el.rect6.setAttribute('aria-pressed', String(state.tableType === 'rect6'));
     el.start.disabled = ph !== 'ready';
     el.retry.disabled = ph === 'ready';
     el.save.disabled = ph !== 'done';
@@ -1956,6 +2016,7 @@
 
   el.round.addEventListener('click', function () { setTable('round'); });
   el.rect.addEventListener('click', function () { setTable('rect'); });
+  el.rect6.addEventListener('click', function () { setTable('rect6'); });
   el.start.addEventListener('click', start);
   el.retry.addEventListener('click', start);
   el.save.addEventListener('click', savePng);
